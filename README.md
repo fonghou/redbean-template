@@ -5,6 +5,6 @@
 ## run reload
 `make run`
 
-## rundebugger
+## run debugger
 
 `./redbean.com -u`
