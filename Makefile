@@ -13,4 +13,4 @@ deps:
 	# sudo sh -c "echo ':APE:M::MZqFpD::/usr/bin/ape:' >/proc/sys/fs/binfmt_misc/register"
 
 run: bin
-	ls redbean.com | entr -rn ./redbean.com -u
+	ls redbean.com | entr -r ./redbean.com -u
