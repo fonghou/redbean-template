@@ -1,6 +1,5 @@
-local dbg = require "debugger"
-
 if os.getenv("DEBUG") then
+  local dbg = require "debugger"
   _G.dbg = dbg
   _G.error = dbg.error
   _G.assert = dbg.assert
