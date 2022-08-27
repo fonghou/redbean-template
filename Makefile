@@ -1,7 +1,7 @@
 SOURCES != ls *.fnl | awk 'sub(".fnl$$", ".lua")'
 
 %.lua: %.fnl
-	fennel -c $< > .lua/$@
+	fennel --no-compiler-sandbox -c $< > .lua/$@
 
 bin: ${SOURCES}
 	zip redbean.com .init.lua .lua/*.lua

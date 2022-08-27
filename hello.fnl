@@ -1,6 +1,8 @@
 (local clj (require :cljlib))
 (local html (require :html))
 
+(import-macros {: dbg} :macros.dbg)
+
 (when (< 0 (DB:exec
   "
   CREATE TABLE test (
