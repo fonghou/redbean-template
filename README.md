@@ -6,5 +6,4 @@
 `make run`
 
 ## run debugger
-
-`./redbean.com -u`
+`make dbg`
