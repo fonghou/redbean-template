@@ -14,3 +14,6 @@ deps:
 
 run: bin
 	ls redbean.com | entr -r ./redbean.com -u
+
+dbg: bin
+	DEBUG=1 ./redbean.com -u

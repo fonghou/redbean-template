@@ -1,12 +1,19 @@
 local clj = require("cljlib")
 local html = require("html")
-local dbg = require("debugger")
+if (0 < DB:exec("\n  CREATE TABLE test (\n    id INTEGER PRIMARY KEY,\n    content TEXT\n  );\n  INSERT INTO test (content) VALUES ('Hello World');\n  INSERT INTO test (content) VALUES ('Hello Lua');\n  INSERT INTO test (content) VALUES ('Hello Sqlite3');\n  ")) then
+  error(("can't create tables: " .. DB:errmsg()))
+else
+end
 for row in DB:nrows("SELECT * FROM test") do
   print((row.id .. ". " .. row.content .. "\n"))
 end
+H.setTemplate("404", "Nothing to see here")
+H.setRoute(H.GET("/status403"), H.serve403)
+H.setRoute("/favicon.ico", H.serveAsset)
+H.setRoute("/help.*", H.serveAsset)
 H.setTemplate("hello", "Hello, {%& name %}")
-local function _1_(r)
+local function _2_(r)
   dbg()
   return H.serveContent("hello", {name = r.params.name})
 end
-return H.setRoute("/hello/:name", _1_)
+return H.setRoute("/hello/:name", _2_)
