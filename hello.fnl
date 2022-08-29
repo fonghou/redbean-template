@@ -18,12 +18,7 @@
 (each [row (DB:nrows "SELECT * FROM test")]
   (print (.. row.id ". " row.content "\n")))
 
-(H.setTemplate :404 "Nothing to see here")
-
 (H.setRoute (H.GET "/status403") H.serve403)
-
-(H.setRoute "/favicon.ico" H.serveAsset)
-(H.setRoute "/help.*" H.serveAsset)
 
 (H.setTemplate :hello "Hello, {%& name %}")
 (H.setRoute "/hello/:name"

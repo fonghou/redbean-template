@@ -13,4 +13,6 @@ H = require "fullmoon"
 
 require 'hello'
 
+H.setRoute("/*catchall", H.servePath)
+
 H.run()

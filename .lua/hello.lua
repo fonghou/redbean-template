@@ -7,10 +7,7 @@ end
 for row in DB:nrows("SELECT * FROM test") do
   print((row.id .. ". " .. row.content .. "\n"))
 end
-H.setTemplate("404", "Nothing to see here")
 H.setRoute(H.GET("/status403"), H.serve403)
-H.setRoute("/favicon.ico", H.serveAsset)
-H.setRoute("/help.*", H.serveAsset)
 H.setTemplate("hello", "Hello, {%& name %}")
 local function _2_(r)
   dbg()
