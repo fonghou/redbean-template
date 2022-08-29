@@ -1,4 +1,3 @@
-(local clj (require :cljlib))
 (local html (require :html))
 
 ;; (import-macros {: dbg} :macros.dbg)

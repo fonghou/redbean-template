@@ -1,4 +1,3 @@
-local clj = require("cljlib")
 local html = require("html")
 if (0 < DB:exec("\n  CREATE TABLE test (\n    id INTEGER PRIMARY KEY,\n    content TEXT\n  );\n  INSERT INTO test (content) VALUES ('Hello World');\n  INSERT INTO test (content) VALUES ('Hello Lua');\n  INSERT INTO test (content) VALUES ('Hello Sqlite3');\n  ")) then
   error(("can't create tables: " .. DB:errmsg()))
