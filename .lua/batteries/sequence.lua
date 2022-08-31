@@ -89,7 +89,7 @@ end
 for _, v in ipairs({
 	"map_inplace",
 	"filter_inplace",
-	"foreach",
+	-- "foreach",
 	"reduce",
 	"any",
 	"none",

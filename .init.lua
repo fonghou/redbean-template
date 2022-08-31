@@ -7,6 +7,8 @@ else
   _G.dbg = function() end
 end
 
+require'batteries':export()
+
 DB = require("lsqlite3").open_memory()
 
 H = require "fullmoon"

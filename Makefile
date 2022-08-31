@@ -12,7 +12,6 @@ deps:
 	curl https://fennel-lang.org/downloads/fennel-1.2.0 >fennel && chmod +x fennel
 	curl https://raw.githubusercontent.com/pkulchenko/fullmoon/master/fullmoon.lua >.lua/fullmoon.lua
 	curl https://raw.githubusercontent.com/slembcke/debugger.lua/master/debugger.lua >.lua/debugger.lua
-	curl https://raw.githubusercontent.com/Yonaba/Moses/master/moses.lua > .lua/moses.lua
 	sudo sh -c "echo ':APE:M::MZqFpD::/usr/bin/ape:' >/proc/sys/fs/binfmt_misc/register"
 
 run: bin
