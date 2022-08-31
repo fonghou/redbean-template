@@ -4,7 +4,8 @@ SOURCES != ls *.fnl | awk 'sub(".fnl$$", ".lua")'
 	./fennel --no-compiler-sandbox --compile $< > .lua/$@
 
 bin: ${SOURCES}
-	zip redbean.com .init.lua .lua/*.lua
+	zip redbean.com .init.lua
+	zip -r redbean.com .lua
 
 deps:
 	curl https://redbean.dev/redbean-latest.com >redbean.com && chmod +x redbean.com
