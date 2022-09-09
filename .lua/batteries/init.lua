@@ -19,7 +19,6 @@ local _batteries = {
 	mathx = require_relative("mathx"),
 	tablex = require_relative("tablex"),
 	stringx = require_relative("stringx"),
-	pretty = require_relative("pretty"),
 	--sorting routines
 	sort = require_relative("sort"),
 	--collections
@@ -70,5 +69,9 @@ function _batteries:export()
 
 	return self
 end
+
+setmetatable(_batteries, {
+  __call = function(t) return t:export() end
+})
 
 return _batteries
