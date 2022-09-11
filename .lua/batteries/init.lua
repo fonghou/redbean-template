@@ -22,9 +22,10 @@ local _batteries = {
 	--sorting routines
 	sort = require_relative("sort"),
 	--collections
-	functional = require_relative("functional"),
+    fun = require_relative("fun"),
 	sequence = require_relative("sequence"),
 	set = require_relative("set"),
+    json = require_relative("json"),
 }
 
 --assign aliases
@@ -46,10 +47,8 @@ function _batteries:export()
 		end
 	end
 
-	--overlay tablex and functional and sort routines onto table
+	--overlay tablex and sort routines onto table
 	self.tablex.shallow_overlay(table, self.tablex)
-	--now we can use it through table directly
-	table.shallow_overlay(table, self.functional)
 	self.sort:export()
 
 	--overlay onto global math table
@@ -62,10 +61,7 @@ function _batteries:export()
 	assert = self.assert
 
 	--like ipairs, but in reverse
-	ripairs = self.tablex.ripairs
-
-	--export the whole library to global `batteries`
-	batteries = self
+	_G.ripairs = self.tablex.ripairs
 
 	return self
 end
