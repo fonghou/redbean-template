@@ -1,8 +1,6 @@
 (local html (require :html))
 
-;; (import-macros {: dbg} :macros.dbg)
-
-(when (< 0 (DB:exec
+(DB:exec
   "
   CREATE TABLE test (
     id INTEGER PRIMARY KEY,
@@ -11,15 +9,12 @@
   INSERT INTO test (content) VALUES ('Hello World');
   INSERT INTO test (content) VALUES ('Hello Lua');
   INSERT INTO test (content) VALUES ('Hello Sqlite3');
-  "))
-  (error (.. "can't create tables: " (DB:errmsg))))
-
-(each [row (DB:nrows "SELECT * FROM test")]
-  (print (.. row.id ". " row.content "\n")))
+  ")
 
 (H.setRoute (H.GET "/status403") H.serve403)
 
-(H.setTemplate :hello "Hello, {%& name %}")
+(H.setTemplate :hello "<h3>Welcome {%& name %}!</h3>")
+
 (H.setRoute "/hello/:name"
   (fn [r]
     (dbg)
