@@ -5,6 +5,10 @@ SOURCES = $(shell ls src/*.fnl | sed 's/.fnl$$/.lua/' | sed 's/^src/.lua/')
 .lua/%.lua: src/%.fnl
 	./fennel --no-compiler-sandbox --compile $< >$@
 
+build: ${SOURCES}
+	zip ${PROJECT} .init.lua
+	zip -r ${PROJECT} .lua
+
 clean:
 	rm -f ${SOURCES}
 	zip -qd ${PROJECT} ${SOURCES} || true
@@ -15,12 +19,8 @@ debug: clean
 repl: clean
 	./${PROJECT} -D .
 
-reload: clean
+run: clean
 	ls ${PROJECT} src/*.fnl | entr -r ./${PROJECT} -u -D .
-
-release: ${SOURCES}
-	zip ./${PROJECT} .init.lua
-	zip -r ${PROJECT} .lua
 
 deps:
 	curl https://redbean.dev/redbean-latest.com >${PROJECT} && chmod +x ${PROJECT}

@@ -13,7 +13,7 @@ local make_searcher = function(env)
       mod_path = '/zip/.lua/' .. mod_path
     end
     return function(...)
-      return fennel.dofile(mod_path, { env = env }, ...)
+      return fennel.dofile(mod_path, { env = env, correlate = true }, ...)
     end, mod_path
   end
 end

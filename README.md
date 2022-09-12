@@ -1,11 +1,10 @@
 # redbean + fullmoon + fennel
 
-`make deps`
+`make deps && make`
 
 `make debug`
 
 `make repl`
 
-`make reload`
+`make run`
 
-`make release`
