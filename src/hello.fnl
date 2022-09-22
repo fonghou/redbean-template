@@ -1,3 +1,5 @@
+(import-macros {: args} :macros)
+(local pretty (require :fennel.view))
 (local html (require :html))
 
 (DB:exec
@@ -12,6 +14,11 @@
   ")
 
 (H.setRoute (H.GET "/status403") H.serve403)
+
+(H.setRoute (args "/*" &
+                  :scheme "https"
+                  :otherwise
+                  #(H.serveRedirect (H.makeUrl {:scheme "https"}))))
 
 (H.setTemplate :hello "<h3>Welcome {%& name %}!</h3>")
 
