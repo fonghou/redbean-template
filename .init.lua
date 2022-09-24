@@ -1,6 +1,3 @@
-DB = require("lsqlite3").open_memory()
-H = require "fullmoon"
-
 local fennel = require("fennel")
 local path = require("path")
 
@@ -29,6 +26,9 @@ if os.getenv("DEBUG") then
 else
   _G.dbg = function() end
 end
+
+DB = require("lsqlite3").open_memory()
+H = require "fullmoon"
 
 require 'hello'
 
