@@ -20,7 +20,13 @@
                   :otherwise
                   #(H.serveRedirect (H.makeUrl {:scheme "https"}))))
 
-(H.setTemplate :hello "<h3>Welcome {%& name %}!</h3>")
+(fn hello-html [r]
+  (html [:html {:lang "en"}
+         [:body {}
+          [:h1 {} (string.format "Welcome %s!" r.name)]]]))
+
+;; (H.setTemplate :hello "<h3>Welcome {%& name %}!</h3>")
+(H.setTemplate :hello hello-html)
 
 (H.setRoute "/hello/:name"
   (fn [r]
