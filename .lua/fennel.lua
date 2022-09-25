@@ -408,10 +408,10 @@ package.preload["fennel.repl"] = package.preload["fennel.repl"] or function(...)
           _675_ = _676_
         end
       end
-      if ((_G.type(_675_) == "table") and (nil ~= (_675_).source) and (nil ~= (_675_).short_src) and ((_675_).what == "Lua") and (nil ~= (_675_).linedefined)) then
-        local source = (_675_).source
-        local src = (_675_).short_src
+      if ((_G.type(_675_) == "table") and (nil ~= (_675_).linedefined) and ((_675_).what == "Lua") and (nil ~= (_675_).short_src) and (nil ~= (_675_).source)) then
         local line = (_675_).linedefined
+        local src = (_675_).short_src
+        local source = (_675_).source
         local fnlsrc
         do
           local t_680_ = compiler.sourcemap

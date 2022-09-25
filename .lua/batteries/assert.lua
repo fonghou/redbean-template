@@ -77,7 +77,7 @@ end
 -- useful for optional parameters.
 function assert:type_or_nil(a, t, msg, stack_level)
 	if a ~= nil then
-		assert:type(a, t, msg, stack_level + 1)
+		assert:type(a, t, msg, (stack_level or 0) + 1)
 	end
 	return a
 end
