@@ -153,7 +153,7 @@ end
 
 local ref = {} -- some unique key value
 -- request functions (`request.write()`)
-local reqenv = { write = Write,
+local reqenv = {
   escapeHtml = EscapeHtml, escapePath = EscapePath,
   formatIp = FormatIp, formatHttpDateTime = FormatHttpDateTime,
   makePath = makePath, makeUrl = makeUrl, }
@@ -235,24 +235,24 @@ end
 
 --[[-- template engine --]]--
 
-local templates = {}
+local templates, vars = {}, {}
 local function render(name, opt)
   argerror(type(name) == "string", 1, "(string expected)")
   argerror(templates[name], 1, "(unknown template name '"..tostring(name).."')")
   argerror(not opt or type(opt) == "table", 2, "(table expected)")
-  local params = {}
+  local params = {vars = vars}  -- assign by default, but allow to overwrite
   local env = getfenv(templates[name].handler)
   -- add "original" template parameters
   for k, v in pairs(rawget(env, ref) or {}) do params[k] = v end
   -- add "passed" template parameters
   for k, v in pairs(opt or {}) do params[k] = v end
   LogDebug("render template '%s'", name)
-  -- return template results or an empty string to indicate completion
-  -- this is useful when the template does direct write to the output buffer
   local refcopy = env[ref]
   env[ref] = params
   local res, more = templates[name].handler(opt)
   env[ref] = refcopy
+  -- return template results or an empty string to indicate completion
+  -- this is useful when the template does direct write to the output buffer
   return res or "", more or templates[name].ContentType
 end
 
@@ -261,17 +261,19 @@ local function setTemplate(name, code, opt)
   -- to load templates from;
   -- its hash values provide mapping from extensions to template types
   if type(name) == "table" then
+    local tmpls = {}
     for _, prefix in ipairs(name) do
       local paths = GetZipPaths(prefix)
       for _, path in ipairs(paths) do
         local tmplname, ext = path:gsub("^"..prefix.."/?",""):match("(.+)%.(%w+)$")
         if ext and name[ext] then
-          setTemplate(tmplname, {type = name[ext],
+          setTemplate(tmplname, {type = name[ext], path  = path,
               LoadAsset(path) or error("Can't load asset: "..path)})
+          tmpls[tmplname] = true
         end
       end
     end
-    return
+    return tmpls
   end
   argerror(type(name) == "string", 1, "(string or table expected)")
   local params = {}
@@ -283,7 +285,7 @@ local function setTemplate(name, code, opt)
   if ctype == "string" then
     argerror(tmpl ~= nil, 2, "(unknown template type/name)")
     argerror(tmpl.parser ~= nil, 2, "(referenced template doesn't have a parser)")
-    code = assert(load(tmpl.parser(code), code))
+    code = assert(load(tmpl.parser(code), "@".. (params.path or name)))
   end
   local env = setmetatable({render = render, [ref] = opt},
     -- get the metatable from the template that this one is based on,
@@ -292,7 +294,10 @@ local function setTemplate(name, code, opt)
     (opt or {}).autotag and tmplTagHandlerEnv or tmplRegHandlerEnv)
   params.handler = setfenv(code, env)
   templates[name] = params
+  return {name = true}
 end
+
+local function setTemplateVar(name, value) vars[name] = value end
 
 --[[-- routing engine --]]--
 
@@ -683,13 +688,16 @@ local function error2tmpl(status, reason, message)
   SetStatus(status, reason) -- set status, but allow template handlers to overwrite it
   local ok, res = pcall(render, tostring(status),
     {status = status, reason = reason, message = message})
+  if not ok and status ~= 500 and not res:find("unknown template name") then
+    error(res)
+  end
   return ok and res or ServeError(status, reason) or true
 end
 local function checkPath(path) return type(path) == "string" and path or GetPath() end
 local fm = setmetatable({ _VERSION = VERSION, _NAME = NAME, _COPYRIGHT = "Paul Kulchenko",
   getBrand = function() return ("%s/%s %s/%s"):format("redbean", getRBVersion(), NAME, VERSION) end,
-  setTemplate = setTemplate, setRoute = setRoute,
-  setSchedule = setSchedule,
+  setTemplate = setTemplate, setTemplateVar = setTemplateVar,
+  setRoute = setRoute, setSchedule = setSchedule,
   makePath = makePath, makeUrl = makeUrl,
   makeBasicAuth = makeBasicAuth, makeIpMatcher = makeIpMatcher,
   makeLastModified = makeLastModified, makeValidator = makeValidator,
@@ -986,13 +994,13 @@ Log = Log or function() end
 fm.setTemplate("fmt", {
     parser = function (tmpl)
       local EOT = "\0"
-      local function writer(s) return #s > 0 and ("write(%q)"):format(s) or "" end
+      local function writer(s) return #s > 0 and ("Write(%q)"):format(s) or "" end
       local tupd = (tmpl.."{%"..EOT.."%}"):gsub("(.-){%%([=&]*)%s*(.-)%s*%%}", function(htm, pref, val)
           return writer(htm)
           ..(val ~= EOT -- this is not the suffix
             and (pref == "" -- this is a code fragment
               and val.." "
-              or ("write(%s(tostring(%s or '')))")
+              or ("Write(%s(tostring(%s or '')))")
                 :format(pref == "&" and "escapeHtml" or "", val))
             or "")
         end)
@@ -1207,6 +1215,12 @@ tests = function()
     fm.setTemplate(tmpl2, [[{% local title = "set from template" %}{a: "{%= title %}"}]])
     fm.render(tmpl2)
     is(out, '{a: "set from template"}', "JSON with value set from template")
+
+    fm.setTemplateVar("num", 123)
+    fm.setTemplateVar("fun", function() return "abc" end)
+    fm.setTemplate(tmpl2, "{%= vars.num %}{%= vars.fun() %}")
+    fm.render(tmpl2)
+    is(out, '123abc', "templates vars are set with numbers and functions")
   end
 
   fm.setTemplate(tmpl2, [[{a: "{%= title %}"}]], {title = "set when adding"})
@@ -1221,7 +1235,7 @@ tests = function()
   fm.setTemplate(tmpl1, "Hello, World!\n{% something.missing() %}")
   local ok, err = pcall(render, tmpl1)
   is(err ~= nil, true, "report Lua error in template")
-  is(err:match('string "Hello, World!'), 'string "Hello, World!', "error references original template code")
+  is(err:match('tmpl1:'), 'tmpl1:', "error references original template name")
   is(err:match(':2: '), ':2: ', "error references expected line number")
 
   fm.setTemplate(tmpl1, "{%if title then%}full{%else%}empty{%end%}")
@@ -1243,7 +1257,9 @@ tests = function()
           ["/views/hello3.aaa"] = "Hello",
         })[s] end,
       function()
-        fm.setTemplate({"/views/", fmt = "fmt", fmg = "html"})
+        local tmpls = fm.setTemplate({"/views/", fmt = "fmt", fmg = "html"})
+        is(tmpls["hello1"], true, "setTemplate for a folder returns list of templates 1/2")
+        is(tmpls["hello2"], true, "setTemplate for a folder returns list of templates 2/2")
         fm.render("hello1", {title = "value 1"})
         is(out, [[Hello, value 1]], "rendered default template loaded from an asset")
         fm.render("hello2", {title = "value 2"})

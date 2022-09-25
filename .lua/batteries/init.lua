@@ -22,8 +22,8 @@ local _batteries = {
 	--sorting routines
 	sort = require_relative("sort"),
 	--collections
-	sequence = require_relative("sequence"),
-	set = require_relative("set"),
+	Seq = require_relative("sequence"),
+	Set = require_relative("set"),
     json = require_relative("json"),
 }
 

@@ -15,10 +15,10 @@
 
 (H.setRoute (H.GET "/status403") H.serve403)
 
-(H.setRoute (args "/*" &
-                  :scheme "https"
-                  :otherwise
-                  #(H.serveRedirect (H.makeUrl {:scheme "https"}))))
+;; (H.setRoute (args "/*" &
+;;                   :scheme "https"
+;;                   :otherwise
+;;                   #(H.serveRedirect (H.makeUrl {:scheme "https"}))))
 
 (fn hello-html [r]
   (html [:html {:lang "en"}
