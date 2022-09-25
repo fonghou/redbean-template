@@ -3,7 +3,7 @@ PROJECT = redbean.com
 SOURCES = $(shell ls src/*.fnl | sed 's/.fnl$$/.lua/' | sed 's/^src/.lua/')
 
 .lua/%.lua: src/%.fnl
-	./fennel --compile $< >$@
+	fennel --compile $< >$@
 
 build: ${SOURCES}
 	zip ${PROJECT} .init.lua
