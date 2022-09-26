@@ -16,11 +16,11 @@ clean:
 debug: clean
 	DEBUG=1 ./${PROJECT} -u -D .
 
-repl: clean
-	./${PROJECT} -D .
-
 run: clean
 	ls ${PROJECT} src/*.fnl | entr -r ./${PROJECT} -u -D .
+
+repl: clean
+	./${PROJECT} -F .init.lua -e "require'fennel'.repl()" -i
 
 deps:
 	curl https://redbean.dev/redbean-latest.com >${PROJECT} && chmod +x ${PROJECT}
