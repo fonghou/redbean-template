@@ -408,10 +408,10 @@ package.preload["fennel.repl"] = package.preload["fennel.repl"] or function(...)
           _677_ = _678_
         end
       end
-      if ((_G.type(_677_) == "table") and (nil ~= (_677_).short_src) and (nil ~= (_677_).source) and ((_677_).what == "Lua") and (nil ~= (_677_).linedefined)) then
-        local src = (_677_).short_src
+      if ((_G.type(_677_) == "table") and ((_677_).what == "Lua") and (nil ~= (_677_).source) and (nil ~= (_677_).linedefined) and (nil ~= (_677_).short_src)) then
         local source = (_677_).source
         local line = (_677_).linedefined
+        local src = (_677_).short_src
         local fnlsrc
         do
           local t_682_ = compiler.sourcemap
@@ -918,7 +918,7 @@ package.preload["fennel.specials"] = package.preload["fennel.specials"] or funct
       do
         local tbl_14_auto = {}
         local i_15_auto = #tbl_14_auto
-        for k, v in pairs(x) do
+        for k, v in utils.stablepairs(x) do
           local val_16_auto = (deep_tostring(k, true) .. " " .. deep_tostring(v))
           if (nil ~= val_16_auto) then
             i_15_auto = (i_15_auto + 1)
@@ -1764,7 +1764,7 @@ package.preload["fennel.specials"] = package.preload["fennel.specials"] or funct
         _540_ = _539_
       end
     end
-    return {table = utils.copy(table), math = utils.copy(math), string = utils.copy(string), pairs = pairs, ipairs = ipairs, select = select, tostring = tostring, tonumber = tonumber, bit = rawget(_G, "bit"), pcall = pcall, xpcall = xpcall, next = next, print = print, type = type, assert = assert, error = error, setmetatable = setmetatable, getmetatable = safe_getmetatable, require = safe_require, rawlen = rawget(_G, "rawlen"), rawget = rawget, rawset = rawset, rawequal = rawequal, _VERSION = _VERSION, utf8 = _540_}
+    return {table = utils.copy(table), math = utils.copy(math), string = utils.copy(string), pairs = utils.stablepairs, ipairs = ipairs, select = select, tostring = tostring, tonumber = tonumber, bit = rawget(_G, "bit"), pcall = pcall, xpcall = xpcall, next = next, print = print, type = type, assert = assert, error = error, setmetatable = setmetatable, getmetatable = safe_getmetatable, require = safe_require, rawlen = rawget(_G, "rawlen"), rawget = rawget, rawset = rawset, rawequal = rawequal, _VERSION = _VERSION, utf8 = _540_}
   end
   local function combined_mt_pairs(env)
     local combined = {}
