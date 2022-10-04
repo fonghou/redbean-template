@@ -27,7 +27,16 @@ else
   _G.dbg = function() end
 end
 
-DB = require("lsqlite3").open_memory()
+local sqlite3 = require("lsqlite3")
+
+function ConnectDb()
+    local db = sqlite3.open("db.sqlite3")
+    db:busy_timeout(1000)
+    db:exec[[PRAGMA journal_mode=WAL]]
+    db:exec[[PRAGMA synchronous=NORMAL]]
+    return db
+end
+
 H = require "fullmoon"
 
 require 'hello'
