@@ -15,9 +15,8 @@ local make_searcher = function(env)
   end
 end
 
-local fnl_searcher = make_searcher(_G)
-table.insert(package.searchers, fnl_searcher)
-table.insert(fennel["macro-searchers"], fnl_searcher)
+table.insert(package.searchers, make_searcher(_G))
+table.insert(fennel["macro-searchers"], make_searcher("_COMPILER"))
 debug.traceback = fennel.traceback
 
 if os.getenv("DEBUG") then

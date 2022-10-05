@@ -1,4 +1,5 @@
 *.com
 db/
-.vim/
+index.lua
 .lnvim.lua
+.vim/

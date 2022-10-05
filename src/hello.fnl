@@ -26,6 +26,6 @@
   (each [row (db:nrows "SELECT * FROM test")]
     (print row.id row.content))
 
-  (args 10 20 30 & :a "a")
+  (print (pretty (args 10 20 30 & :a "a")))
 
   )

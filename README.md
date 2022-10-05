@@ -6,5 +6,5 @@
 
 `make repl`
 
-`make run`
+`make reload`
 

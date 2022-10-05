@@ -1,28 +1,33 @@
 SERVER = server.com
 
-${SERVER}:
+${SERVER}: redbean.com db index.lua
 	cp redbean.com ${SERVER}
 	cp src/* .lua/
 	zip -r ${SERVER} .init.lua .lua *.lua
 
-release: ${SERVER}
-	cp src/* .lua/ && zip -r ${SERVER} .lua
+db: sqlite3.com
+	mkdir db && ./sqlite3.com db/sqlite3 < schema.sql
 
+%.lua: %.fnl
+	fennel --add-macro-path 'src/?.fnl' -c $< >$@
+
+.PHONY: clean
 clean:
 	rm -f ${SERVER}
 
+.PHONY: debug
 debug:
 	DEBUG=1 rlwrap ./${SERVER} -u -D .
 
+.PHONY: repl
 repl:
 	./${SERVER} -F .init.lua -e "require'fennel'.repl()" -i
 
-reload: ${SERVER}
+.PHONY: reload
+reload:
 	ls ${SERVER} src/*.fnl | entr -r ./${SERVER} -u -D .
 
-db:
-	./sqlite3.com db/sqlite3 < schema.sql
-
+.PHONY: deps
 deps:
 	curl https://redbean.dev/redbean-latest.com >redbean.com && chmod +x redbean.com
 	curl https://redbean.dev/sqlite3.com >sqlite3.com && chmod +x sqlite3.com
