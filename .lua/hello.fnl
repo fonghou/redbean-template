@@ -21,12 +21,11 @@
       :hello
       {:name r.params.name})))
 
-(each [row (db:nrows "SELECT * FROM test")]
-  (print row.id row.content))
-
-(print (pretty (args 10 20 30 & :a "a")))
-
 (comment
 
+  (each [row (db:nrows "SELECT * FROM test")]
+    (print row.id row.content))
+
+  (print (pretty (args 10 20 30 & :a "a")))
 
   )

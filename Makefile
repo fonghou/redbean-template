@@ -1,6 +1,6 @@
 SERVER = server.com
 
-${SERVER}: redbean.com db index.lua
+${SERVER}: redbean.com db $(shell ls *.fnl | sed 's/.fnl$$/.lua/')
 	cp redbean.com ${SERVER}
 	cp src/* .lua/
 	zip -r ${SERVER} .init.lua .lua *.lua
