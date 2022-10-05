@@ -15,8 +15,10 @@ local make_searcher = function(env)
   end
 end
 
-table.insert(package.loaders or package.searchers, make_searcher(_G))
-table.insert(fennel["macro-searchers"], make_searcher(_G))
+local fnl_searcher = make_searcher(_G)
+table.insert(package.searchers, fnl_searcher)
+table.insert(fennel["macro-searchers"], fnl_searcher)
+debug.traceback = fennel.traceback
 
 if os.getenv("DEBUG") then
   local dbg = require "debugger"
@@ -30,11 +32,14 @@ end
 local sqlite3 = require("lsqlite3")
 
 function ConnectDb()
-    local db = sqlite3.open("db.sqlite3")
-    db:busy_timeout(1000)
-    db:exec[[PRAGMA journal_mode=WAL]]
-    db:exec[[PRAGMA synchronous=NORMAL]]
-    return db
+  if not Db then
+    Db = sqlite3.open("db/sqlite3")
+    Db:busy_timeout(1000)
+    Db:exec[[PRAGMA journal_mode=WAL]]
+    Db:exec[[PRAGMA synchronous=NORMAL]]
+    Db:exec[[select count(*) from test]]
+  end
+  return Db
 end
 
 H = require "fullmoon"

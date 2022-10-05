@@ -1,31 +1,31 @@
-PROJECT = redbean.com
+SERVER = server.com
 
-SOURCES = $(shell ls src/*.fnl | sed 's/.fnl$$/.lua/' | sed 's/^src/.lua/')
+${SERVER}:
+	cp redbean.com ${SERVER}
+	cp src/* .lua/
+	zip -r ${SERVER} .init.lua .lua *.lua
 
-.lua/%.lua: src/%.fnl
-	fennel --compile $< >$@
-
-build: ${SOURCES}
-	zip -r ${PROJECT} .init.lua .lua
+release: ${SERVER}
+	cp src/* .lua/ && zip -r ${SERVER} .lua
 
 clean:
-	rm -f ${SOURCES} && zip -q -d ${PROJECT} ${SOURCES} || true
+	rm -f ${SERVER}
 
-debug: clean
-	DEBUG=1 ./${PROJECT} -u -D .
+debug:
+	DEBUG=1 rlwrap ./${SERVER} -u -D .
 
-run: clean
-	ls ${PROJECT} src/*.fnl | entr -r ./${PROJECT} -u -D .
+repl:
+	./${SERVER} -F .init.lua -e "require'fennel'.repl()" -i
 
-repl: clean
-	./${PROJECT} -F .init.lua -e "require'fennel'.repl()" -i
+reload: ${SERVER}
+	ls ${SERVER} src/*.fnl | entr -r ./${SERVER} -u -D .
 
 db:
-	./sqlite3.com db.sqlite3 < schema.sql
+	./sqlite3.com db/sqlite3 < schema.sql
 
 deps:
-	curl https://redbean.dev/redbean-latest.com >${PROJECT} && chmod +x ${PROJECT}
-	curl https://redbean.dev/sqlite3.com > sqlite3.com && chmod +x sqlite3.com
+	curl https://redbean.dev/redbean-latest.com >redbean.com && chmod +x redbean.com
+	curl https://redbean.dev/sqlite3.com >sqlite3.com && chmod +x sqlite3.com
 	curl https://raw.githubusercontent.com/pkulchenko/fullmoon/master/fullmoon.lua >.lua/fullmoon.lua
 	curl https://raw.githubusercontent.com/slembcke/debugger.lua/master/debugger.lua >.lua/debugger.lua
 	cp ~/github/fennel/fennel.lua .lua/

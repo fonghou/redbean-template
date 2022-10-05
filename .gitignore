@@ -1,6 +1,4 @@
-redbean.com
-sqlite3.com
-fennel
-db.*
+*.com
+db/
 .vim/
 .lnvim.lua
