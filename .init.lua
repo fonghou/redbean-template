@@ -36,7 +36,6 @@ function ConnectDb()
     Db:busy_timeout(1000)
     Db:exec[[PRAGMA journal_mode=WAL]]
     Db:exec[[PRAGMA synchronous=NORMAL]]
-    Db:exec[[select count(*) from test]]
   end
   return Db
 end
