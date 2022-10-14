@@ -6,7 +6,7 @@ ${SERVER}: redbean.com db $(shell ls *.fnl | sed 's/.fnl$$/.lua/')
 	zip -r ${SERVER} .init.lua .lua *.lua
 
 db: sqlite3.com
-	[[ -d db ]] || mkdir db && ./sqlite3.com db/sqlite3 < schema.sql
+	[ -d db ] || mkdir db && ./sqlite3.com db/sqlite3 < schema.sql
 
 %.lua: %.fnl
 	fennel --add-macro-path 'src/?.fnl' -c $< >$@
