@@ -2,14 +2,13 @@ SERVER = server.com
 
 ${SERVER}: redbean.com db $(shell ls *.fnl | sed 's/.fnl$$/.lua/')
 	cp redbean.com ${SERVER}
-	cp src/* .lua/
 	zip -r ${SERVER} .init.lua .lua *.lua
 
 db: sqlite3.com
 	[ -d db ] || mkdir db && ./sqlite3.com db/sqlite3 < schema.sql
 
 %.lua: %.fnl
-	fennel --add-macro-path 'src/?.fnl' -c $< >$@
+	fennel --add-macro-path '.lua/?.fnl' -c $< >$@
 
 .PHONY: clean
 clean:
@@ -25,7 +24,7 @@ repl:
 
 .PHONY: reload
 reload:
-	ls ${SERVER} src/*.fnl | entr -r ./${SERVER} -u -D .
+	ls ${SERVER} .init.lua .lua/*.fnl | entr -r ./${SERVER} -u -D .
 
 .PHONY: deps
 deps:
