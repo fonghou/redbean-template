@@ -1,1 +1,8 @@
-(Write "<h3>欢迎光临</h3>")
+(local html (require :html))
+
+(fn index []
+  (html [:html {:lang "en"}
+         [:body {}
+          [:h1 {} "Welcome!"]]]))
+
+(Write (index))

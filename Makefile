@@ -1,11 +1,11 @@
 SERVER = server.com
+SOURCES = .init.lua $(shell ls *.fnl | sed 's/.fnl$$/.lua/')
 
-${SERVER}: redbean.com db $(shell ls *.fnl | sed 's/.fnl$$/.lua/')
-	cp redbean.com ${SERVER}
-	zip -r ${SERVER} .init.lua .lua *.lua
+${SERVER}: redbean.com db ${SOURCES}
+	cp redbean.com ${SERVER} && zip -r ${SERVER} ${SOURCES} .lua
 
 db: sqlite3.com
-	[ -d db ] || mkdir db && ./sqlite3.com db/sqlite3 < schema.sql
+	( [ -d db ] || mkdir db ) && ./sqlite3.com db/sqlite3 < schema.sql
 
 %.lua: %.fnl
 	fennel --add-macro-path '.lua/?.fnl' -c $< >$@
@@ -15,16 +15,16 @@ clean:
 	rm -f ${SERVER}
 
 .PHONY: debug
-debug:
+debug: ${SERVER}
 	DEBUG=1 rlwrap ./${SERVER} -u -D .
 
 .PHONY: repl
-repl:
+repl: ${SERVER}
 	./${SERVER} -F .init.lua -e "require'fennel'.repl()" -i
 
 .PHONY: reload
-reload:
-	ls ${SERVER} .init.lua .lua/*.fnl | entr -r ./${SERVER} -u -D .
+reload: ${SERVER}
+	ls .init.lua .lua/*.fnl | entr -r ./${SERVER} -u -D .
 
 .PHONY: deps
 deps:

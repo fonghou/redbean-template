@@ -1,6 +1,6 @@
-(import-macros {: args} :macros)
-(local pretty (require :fennel.view))
 (local html (require :html))
+(local pp (fn [t] (print ((require :fennel.view) t))))
+(import-macros {: args} :macros)
 
 (local db (ConnectDb))
 
@@ -26,6 +26,6 @@
   (each [row (db:nrows "SELECT * FROM test")]
     (print row.id row.content))
 
-  (print (pretty (args 10 20 30 & :a "a")))
+  (pp (args 10 20 30 & :a "a"))
 
   )

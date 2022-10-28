@@ -42,14 +42,13 @@ end
 
 H = require("fullmoon")
 
-H.setRoute("/*.fnl", function(req)
+H.setRoute("/*.lua", function(req)
   local file = req.params.splat .. ".fnl"
   if path.exists(file) then
     fennel.dofile(file)
-  else
-    fennel.dofile("/zip/" .. file)
+    return true
   end
-  return true
+  return false
 end)
 
 require("hello")
