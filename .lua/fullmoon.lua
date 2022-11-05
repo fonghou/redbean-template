@@ -3,7 +3,7 @@
 -- Copyright 2021 Paul Kulchenko
 --
 
-local NAME, VERSION = "fullmoon", "0.34"
+local NAME, VERSION = "fullmoon", "0.35"
 
 --[[-- support functions --]]--
 
@@ -515,7 +515,7 @@ local function makeStorage(dbname, sqlsetup)
     -- simple __index = db doesn't work, as it gets `dbm` passed instead of `db`,
     -- so remapping is needed to proxy this to `t.db` instead
     return setmetatable(self, {__index = function(t,k)
-          return function(self,...) return t.db[k](db,...) end
+          return sqlite3[k] or t.db[k] and function(self,...) return t.db[k](db,...) end
         end})
   end
   local function norm(sql)
@@ -529,6 +529,7 @@ local function makeStorage(dbname, sqlsetup)
     local sqltbl = [[SELECT name, sql FROM sqlite_master
       WHERE type = "table" AND name not like "sqlite_%"]]
     -- this PRAGMA is automatically disabled when the db is committed
+    local err
     local changes = {}
     local actbl, prtbl = {}, {}
     for r in pristine:nrows(sqltbl) do prtbl[r.name] = r.sql end
@@ -536,7 +537,7 @@ local function makeStorage(dbname, sqlsetup)
       actbl[r.name] = true
       if prtbl[r.name] then
         if norm(r.sql) ~= norm(prtbl[r.name]) then
-          local namepatt = '%f[^%s"]'..r.name:gsub("%p","%%%1")..'%f[%s"]'
+          local namepatt = '%f[^%s"]'..r.name:gsub("%p","%%%1")..'%f[%s"(]'
           local tmpname = r.name.."__new"
           local createtbl = prtbl[r.name]:gsub(namepatt, tmpname, 1)
           table.insert(changes, createtbl)
@@ -548,7 +549,7 @@ local function makeStorage(dbname, sqlsetup)
             if prcol[c.name] then
               table.insert(common, c.name)
             elseif not opts.delete then
-              return nil, ("Not allowed to remove '%s' from '%s'; %s"
+              err = err or ("Not allowed to remove '%s' from '%s'; %s"
                 ):format(c.name, r.name, msgdelete)
             end
           end
@@ -559,13 +560,16 @@ local function makeStorage(dbname, sqlsetup)
           table.insert(changes, ("ALTER TABLE %s RENAME TO %s"):format(tmpname, r.name))
         end
       else
-        if not opts.delete then
-          return nil, ("Not allowed to drop table '%s'; %s"
+        if opts.delete == nil then
+          err = err or ("Not allowed to drop table '%s'; %s"
             ):format(r.name, msgdelete)
         end
-        table.insert(changes, ("DROP table %s"):format(r.name))
+        if opts.delete == true then
+          table.insert(changes, ("DROP table %s"):format(r.name))
+        end
       end
     end
+    if err then return nil, err end
     for k in pairs(prtbl) do
       if not actbl[k] then table.insert(changes, prtbl[k]) end
     end
@@ -606,7 +610,7 @@ local function makeStorage(dbname, sqlsetup)
     if #changes == 0 then return changes end
 
     -- disable `pragma foreign_keys`, to avoid triggerring cascading deletes
-    local ok, err = self:exec("PRAGMA foreign_keys = OFF")
+    local ok, err = self:exec("PRAGMA foreign_keys=0")
     if not ok then return ok, err end
 
     -- execute the changes
