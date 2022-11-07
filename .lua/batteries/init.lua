@@ -24,7 +24,6 @@ local _batteries = {
   --collections
   Seq = require_relative("sequence"),
   Set = require_relative("set"),
-  json = require_relative("json"),
   iter = require_relative("iter"),
 }
 
