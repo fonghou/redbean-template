@@ -1,3 +1,4 @@
+-- setup fennel
 local fennel = require("fennel")
 local path = require("path")
 
@@ -19,6 +20,7 @@ table.insert(package.searchers, make_searcher(_G))
 table.insert(fennel["macro-searchers"], make_searcher("_COMPILER"))
 debug.traceback = fennel.traceback
 
+-- setup debugger
 if os.getenv("DEBUG") then
   local dbg = require("debugger")
   _G.dbg = dbg
@@ -28,6 +30,7 @@ else
   _G.dbg = function() end
 end
 
+-- setup SQLite3 db
 local sqlite3 = require("lsqlite3")
 
 function ConnectDb()
@@ -40,6 +43,25 @@ function ConnectDb()
   return Db
 end
 
+-- TiddlyWiki
+WIKI_PATH = "wiki.html"
+
+if GetHostOs() == "WINDOWS" then
+  -- Write the embeded html file to disk.
+  local there = path.isfile(WIKI_PATH)
+  if not there then
+    assert(Barf(WIKI_PATH, Slurp("/zip/wiki.html")))
+  end
+  -- serve from disc rather than embeded asset. Same as -D
+  ProgramDirectory(".")
+end
+
+-- Large enough to send entire wiki file
+ProgramMaxPayloadSize(2 * GetAssetSize(WIKI_PATH))
+
+ProgramCache(0)
+
+-- fullmoon routes
 H = require("fullmoon")
 
 H.setRoute("/*.lua", function(req)
@@ -54,5 +76,4 @@ end)
 require("hello")
 
 H.setRoute("/*catchall", H.servePath)
-
 H.run()

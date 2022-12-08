@@ -24,7 +24,6 @@ local _batteries = {
   --collections
   Seq = require_relative("sequence"),
   Set = require_relative("set"),
-  iter = require_relative("iter"),
 }
 
 --assign aliases
