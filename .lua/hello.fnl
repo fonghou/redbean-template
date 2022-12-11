@@ -1,3 +1,4 @@
+((require :batteries))
 (local html (require :html))
 (local pp (fn [t] (print ((require :fennel.view) t))))
 (import-macros {: args} :macros)
@@ -9,7 +10,7 @@
 (fn hello-html [r]
   (html [:html {:lang "en"}
          [:body {}
-          [:h1 {} (string.format "Welcome %s!" r.name)]]]))
+          [:h1 {} (string.format "Hello %s!" r.name)]]]))
 
 (H.setTemplate :hello hello-html)
 ;; (H.setTemplate :hello "<h3>Welcome {%& name %}!</h3>")
