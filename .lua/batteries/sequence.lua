@@ -72,12 +72,9 @@ for _, v in ipairs({
 	"filter",
 	"remove_if",
 	"zip",
-	"stitch",
-	"map_stitch",
-	"cycle",
-	"map_cycle",
-	"chain",
-	"map_chain",
+	"flatmap", "mapcat",
+	"cycle", "map_cycle",
+	"chain", "map_chain",
 }) do
 	local functional_f = functional[v]
 	sequence[v] = function(self, ...)
@@ -107,17 +104,6 @@ for _, v in ipairs({
 	"find_match",
 }) do
 	sequence[v] = functional[v]
-end
-
-
---aliases
-for _, v in ipairs({
-	{"remap", "map_inplace"},
-	{"map_stitch", "stitch"},
-	{"map_cycle", "cycle"},
-	{"find_best", "find_max"},
-}) do
-	sequence[v[1]] = sequence[v[2]]
 end
 
 --(anything that needs bespoke wrapping)

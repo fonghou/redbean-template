@@ -236,7 +236,7 @@ end
 -- (ie results from functions should generally be sequences,
 --  which are appended onto each other, resulting in one big sequence)
 -- (automatically drops any nils, same as map)
-function functional.stitch(t, f)
+function functional.flatmap(t, f)
 	local result = {}
 	for i, v in ipairs(t) do
 		v = f(v, i)
@@ -254,7 +254,7 @@ function functional.stitch(t, f)
 end
 
 --alias
-functional.map_stitch = functional.stitch
+functional.mapcat = functional.flatmap
 
 --maps a sequence {a, b, c} -> { f(a, b), f(b, c), f(c, a) }
 -- useful for inter-dependent data
