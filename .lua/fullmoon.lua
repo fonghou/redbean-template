@@ -3,7 +3,7 @@
 -- Copyright 2021-23 Paul Kulchenko
 --
 
-local NAME, VERSION = "fullmoon", "0.365"
+local NAME, VERSION = "fullmoon", "0.371"
 
 --[[-- support functions --]]--
 
@@ -39,15 +39,16 @@ local function loadsafe(data)
   return ok, res
 end
 local function argerror(cond, narg, extramsg, name)
+  if cond then return cond end
   name = name or debug.getinfo(2, "n").name or "?"
   local msg = ("bad argument #%d to %s%s"):format(narg, name, extramsg and " "..extramsg or  "")
-  if not cond then error(msg, 3) end
-  return cond, msg
+  return error(msg, 3)
 end
 local function logFormat(fmt, ...)
   argerror(type(fmt) == "string", 1, "(string expected)")
   return "(fm) "..(select('#', ...) == 0 and fmt or (fmt or ""):format(...))
 end
+local function quote(s) return s:gsub('([%(%)%.%%%+%-%*%?%[%^%$%]])','%%%1') end
 local function getRBVersion()
   local v = GetRedbeanVersion()
   local major = math.floor(v / 2^16)
@@ -258,6 +259,89 @@ local function serveResponse(status, headers, body)
   end
 end
 
+--[[-- multipart parsing --]]--
+
+local patts = {}
+local function getParameter(header, name)
+  local function optignorecase(s)
+    if not patts[s] then
+      patts[s] = (";%s*"
+        ..s:gsub("%w", function(s) return ("[%s%s]"):format(s:upper(), s:lower()) end)
+        ..[[=["']?([^;"']*)["']?]])
+    end
+    return patts[s]
+  end
+  return header:match(optignorecase(name))
+end
+local CRLF, TAIL = "\r\n", "--"
+local CRLFlen = #CRLF
+local MULTIVAL = "%[%]$"
+local function parseMultipart(body, ctype)
+  argerror(type(ctype) == "string", 2, "(string expected)")
+  local parts = {
+    boundary = getParameter(ctype, "boundary"),
+    start = getParameter(ctype, "start"),
+  }
+  local boundary = "--"..argerror(parts.boundary, 2, "(boundary expected in Content-Type)")
+  local bol, eol, eob = 1
+  while true do
+    repeat
+      eol, eob = string.find(body, boundary, bol, true)
+      if not eol then return nil, "missing expected boundary at position "..bol end
+    until eol == 1 or eol > CRLFlen and body:sub(eol-CRLFlen, eol-1) == CRLF
+    if eol > CRLFlen then eol = eol - CRLFlen end
+    local headers, name, filename = {}
+    if bol > 1 then
+      -- find the header (if any)
+      if string.sub(body, bol, bol+CRLFlen-1) == CRLF then -- no headers
+        bol = bol + CRLFlen
+      else -- headers
+        -- find the end of headers (CRLF+CRLF)
+        local boh, eoh = 1, string.find(body, CRLF..CRLF, bol, true)
+        if not eoh then return nil, "missing expected end of headers at position "..bol end
+        -- join multi-line header values back if present
+        local head = string.sub(body, bol, eoh+1):gsub(CRLF.."%s+", " ")
+        while (string.find(head, CRLF, boh, true) or 0) > boh do
+          local p, e, header, value = head:find("([^:]+)%s*:%s*(.-)%s*\r\n", boh)
+          if p ~= boh then return nil, "invalid header syntax at position "..bol+boh end
+          header = header:lower()
+          if header == "content-disposition" then
+            name = getParameter(value, "name")
+            filename = getParameter(value, "filename")
+          end
+          headers[header] = value
+          boh = e + 1
+        end
+        bol = eoh + CRLFlen*2
+      end
+      -- epilogue is processed, but not returned
+      local ct = headers["content-type"]
+      local b, err = string.sub(body, bol, eol-1)
+      if ct and ct:lower():find("^multipart/") then
+        b, err = parseMultipart(b, ct) -- handle multipart/* recursively
+        if not b then return b, err end
+      end
+      local first = parts.start and parts.start == headers["content-id"] and 1
+      local v = {name = name, headers = headers, filename = filename, data = b}
+      table.insert(parts, first or #parts+1, v)
+      if name then
+        if string.find(name, MULTIVAL) then
+          parts[name] = parts[name] or {}
+          table.insert(parts[name], first or #parts[name]+1, v)
+        else
+          parts[name] = parts[name] or v
+        end
+      end
+    end
+    local tail = body:sub(eob+1, eob+#TAIL)
+    -- check if the encapsulation or regular boundary is present
+    if tail == TAIL then break end
+    if tail ~= CRLF then return nil, "missing closing boundary at position "..eol end
+    bol = eob + #tail + 1
+  end
+  return parts
+end
+
 --[[-- template engine --]]--
 
 local templates, vars = {}, {}
@@ -410,7 +494,7 @@ local function setRoute(opts, handler)
         end
         if v.regex then v.regex = re.compile(v.regex) or argerror(false, 3, "(valid regex expected)") end
       elseif headerMap[k] then
-        opts[k] = {pattern = "%f[%w]"..v.."%f[%W]"}
+        opts[k] = {pattern = "%f[%w]"..quote(v).."%f[%W]"}
       end
     end
   end
@@ -912,7 +996,7 @@ local validators = { msg = trueval, optional = trueval,
   oneof = function(s, list)
     if type(list) ~= "table" then list = {list} end
     for _, v in ipairs(list) do if s == v then return true end end
-    return nil, "%s must be one of: "..table.concat(list, ", ")
+    return nil, "%s must be one of: "..EncodeLua(list):sub(2, -2)
   end,
 }
 local function makeValidator(rules)
@@ -1027,6 +1111,7 @@ local fm = setmetatable({ _VERSION = VERSION, _NAME = NAME, _COPYRIGHT = "Paul K
   getBrand = function() return ("%s/%s %s/%s"):format("redbean", getRBVersion(), NAME, VERSION) end,
   setTemplate = setTemplate, setTemplateVar = setTemplateVar,
   setRoute = setRoute, setSchedule = setSchedule, setHook = setHook,
+  parseMultipart = parseMultipart,
   makeStorage = makeStorage,
   makePath = makePath, makeUrl = makeUrl,
   makeBasicAuth = makeBasicAuth, makeIpMatcher = makeIpMatcher,
@@ -1048,10 +1133,16 @@ local fm = setmetatable({ _VERSION = VERSION, _NAME = NAME, _COPYRIGHT = "Paul K
     return function() return error2tmpl(status, reason, msg) end
   end,
   serveContent = function(tmpl, params) return function() return render(tmpl, params) end end,
-  serveRedirect = function(loc, status) return function()
+  serveRedirect = function(status, loc) return function()
       -- if no status or location is specified, then redirect to the original URL with 303
       -- this is useful for switching to GET after POST/PUT to an endpoint
       -- in all other cases, use the specified status or 307 (temp redirect)
+      local ts, tl = type(status), type(loc)
+      -- swap parameters if needed (as they used to be in a different order before 0.368)
+      -- and also allow both status and location be optional
+      if (ts == "string" or ts == "nil") and (tl == "nil" or tl == "number") then
+        status, loc = loc, status
+      end
       return ServeRedirect(status or loc and 307 or 303, loc or GetPath()) end end,
   serveResponse = serveResponse,
 }, {__index =
@@ -1175,14 +1266,31 @@ local function hcall(func, ...)
   Log(kLogError, logFormat("Lua error: %s", err))
   return false, error2tmpl(500, nil, IsLoopbackIp(GetRemoteAddr()) and err or nil)
 end
+local MPKEY = "multipart"
 local function handleRequest(path)
   path = path or GetPath()
   req = setmetatable({
-      params = setmetatable({}, {__index = function(_, k)
-            if not HasParam(k) then return end
-            -- GetParam may return `nil` for empty parameters,
-            -- like `foo` in `foo&bar=1`, but need to return `false` instead
-            if not string.find(k, "%[%]$") then return GetParam(k) or false end
+      params = setmetatable({}, {__index = function(t, k)
+            local mk = k.."[]" -- if the multi-key exists, then use it instead
+            if not HasParam(k) and HasParam(mk) then k = mk end
+            if not HasParam(k) and not rawget(t, MPKEY) then
+              local ct = GetHeader("Content-Type")
+              if not ct or not string.find(ct, "^multipart/") then return end
+              -- check the multipart body for the requested parameter
+              t[MPKEY] = parseMultipart(GetBody(), ct)
+              -- return pseudo parameter with the parsed multipart message;
+              -- subsequent calls will retrieve it from the table directly
+              if k == MPKEY then return t[MPKEY] end
+            end
+            local mp = rawget(t, MPKEY)
+            if mp then
+              local m = mp[k] or mp[mk]
+              -- if a multipart parameter, then return individual value or list of elements
+              if m then return m.data or m end
+            end
+            -- GetParam may return `nil` for empty parameters (`foo` in `foo&bar=1`),
+            -- but `params` needs to return `false` instead
+            if not string.find(k, MULTIVAL) then return GetParam(k) or false end
             local array={}
             for _, v in ipairs(GetParams()) do
               if v[1] == k then table.insert(array, v[2] or false) end
@@ -1285,7 +1393,10 @@ function fm.run(opts)
         local func = _G[name]
         argerror(type(func) == "function", 1,
           ("(unknown option '%s' with value '%s')"):format(key, v))
-        for _, val in pairs(type(v) == "table" and v or {v}) do func(val) end
+        for _, val in pairs(type(v) == "table" and v or {v}) do
+          -- accept a table to pass multiple values and unpack it
+          func(unpack(type(val) ~= "table" and {val} or val))
+        end
       end
     end
   end
