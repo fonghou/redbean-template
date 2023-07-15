@@ -3,7 +3,7 @@
 -- Copyright 2021-23 Paul Kulchenko
 --
 
-local NAME, VERSION = "fullmoon", "0.371"
+local NAME, VERSION = "fullmoon", "0.376"
 
 --[[-- support functions --]]--
 
@@ -95,7 +95,9 @@ local noHeaderMap = {
   ["transfer-encoding"] = true,
   ["content-encoding"] = true,
   date = true,
-  connection = "close",  -- the only value that is allowed
+  -- "close" is the only value that is allowed for "Connection",
+  -- but only in Redbean before v2.2
+  connection = GetRedbeanVersion() < 0x20200 and "close" or nil,
 }
 -- request headers based on https://datatracker.ietf.org/doc/html/rfc7231#section-5
 -- response headers based on https://datatracker.ietf.org/doc/html/rfc7231#section-7
@@ -177,7 +179,7 @@ local function makeUrl(url, opts)
   return EncodeUrl(parts)
 end
 
-local ref = {} -- some unique key value
+local org, ref = {}, {} -- some unique key values to index template parameters
 -- request functions (`request.write()`)
 local reqenv = {
   escapeHtml = EscapeHtml, escapePath = EscapePath,
@@ -345,21 +347,55 @@ end
 --[[-- template engine --]]--
 
 local templates, vars = {}, {}
+local stack, blocks = {}, {}
+-- `blocks` is a table behind proxy tables indexed by actual `block` tables in each template
+-- where the values are defined blocks and their functions
+-- blocks are retrieved in the order in which templates are rendered
+-- (first called is first used), as stored in `stack` during rendering.
+-- the `stack` table also includes mapping from template names to their proxy tables
+local metablock = {
+  __newindex = function(t, k, v)
+    if not blocks[t] then
+      blocks[t] = {}
+      stack[t[blocks]] = blocks[t]
+    end
+    blocks[t][k] = v
+  end,
+  __index = function(t, k)
+    if not blocks[t] then
+      blocks[t] = {}
+      stack[t[blocks]] = blocks[t]
+    end
+    -- use the "earliest" template after the one signified with `t`
+    for _, name in ipairs(stack) do
+      -- if a template name is requested, then return its table
+      -- this is needed for direct access to template blocks to simulate `super()`
+      local tbl = stack[name]
+      -- don't look beyond the template that made this call
+      if name == k then return tbl end
+      local blk = name and tbl and tbl[k]
+      if blk then return blk end
+    end
+  end,
+}
 local function render(name, opt)
   argerror(type(name) == "string", 1, "(string expected)")
   argerror(templates[name], 1, "(unknown template name '"..tostring(name).."')")
   argerror(not opt or type(opt) == "table", 2, "(table expected)")
-  local params = {vars = vars}  -- assign by default, but allow to overwrite
+  -- assign default parameters, but allow to overwrite
+  local params = {vars = vars, block = setmetatable({[blocks] = name}, metablock)}
   local env = getfenv(templates[name].handler)
   -- add "original" template parameters
-  for k, v in pairs(rawget(env, ref) or {}) do params[k] = v end
+  for k, v in pairs(rawget(env, org) or {}) do params[k] = v end
   -- add "passed" template parameters
   for k, v in pairs(opt or {}) do params[k] = v end
   LogDebug("render template '%s'", name)
-  local refcopy = env[ref]
   env[ref] = params
+  table.insert(stack, name)
   local res, more = templates[name].handler(opt)
-  env[ref] = refcopy
+  table.remove(stack)
+  -- reset block cache when the render stack becomes empty
+  if #stack == 0 then stack, blocks = {}, {} end
   -- return template results or an empty string to indicate completion
   -- this is useful when the template does direct write to the output buffer
   return res or "", more or templates[name].ContentType
@@ -376,8 +412,8 @@ local function setTemplate(name, code, opt)
       for _, path in ipairs(paths) do
         local tmplname, ext = path:gsub("^"..prefix.."/?",""):match("(.+)%.(%w+)$")
         if ext and name[ext] then
-          setTemplate(tmplname, {type = name[ext], path  = path,
-              LoadAsset(path) or error("Can't load asset: "..path)})
+          local asset = LoadAsset(path) or error("Can't load asset: "..path)
+          setTemplate(tmplname, {asset, type = name[ext], path = path}, opt)
           tmpls[tmplname] = true
         end
       end
@@ -396,7 +432,7 @@ local function setTemplate(name, code, opt)
     argerror(tmpl.parser ~= nil, 2, "(referenced template doesn't have a parser)")
     code = assert(load(tmpl.parser(code), "@".. (params.path or name)))
   end
-  local env = setmetatable({render = render, [ref] = opt},
+  local env = setmetatable({render = render, [org] = opt},
     -- get the metatable from the template that this one is based on,
     -- to make sure the correct environment is being served
     tmpl and getmetatable(getfenv(tmpl.handler)) or
@@ -1262,7 +1298,9 @@ end
 local function hcall(func, ...)
   local co = type(func) == "thread" and func or coroutine.create(func)
   local ok, res, more = coroutine.resume(co, ...)
-  if ok then
+  -- return normally on successful execution or an unsuccessful one
+  -- that returns a function (to allow calling `error(fm.serve404)`)
+  if ok or type(res) == "function" then
     return coroutine.status(co) == "suspended" and co or false, res, more
   end
   local err = debug.traceback(co, res)
@@ -1433,13 +1471,15 @@ fm.setTemplate("fmt", {
     parser = function (tmpl)
       local EOT = "\0"
       local function writer(s) return #s > 0 and ("Write(%q)"):format(s) or "" end
+      local function decomment(s) return s:match("%[=*%[") and "--"..s or "" end
       local tupd = (tmpl.."{%"..EOT.."%}"):gsub("(.-){%%([=&]*)%s*(.-)%s*%%}", function(htm, pref, val)
           return writer(htm)
           ..(val ~= EOT -- this is not the suffix
             and (pref == "" -- this is a code fragment
-              and val.." "
+              and val:gsub("%-%-(.*)", decomment).." "
               or ("Write(%s(tostring(%s or '')))")
-                :format(pref == "&" and "escapeHtml" or "", val))
+                :format(pref == "&" and "escapeHtml" or "",
+                        val:gsub("%-%-(.*)", decomment)))
             or "")
         end)
       return tupd
@@ -1467,9 +1507,9 @@ fm.setTemplate("sse", function(val)
       ["X-Accel-Buffering"] = "no",
     }
   end)
-fm.setTemplate("html", {
+fm.setTemplate("fmg", {
     parser = function(s)
-      return ([[return render("html", %s)]]):format(s)
+      return ([[return render("fmg", %s)]]):format(s)
     end,
     function(val)
       argerror(type(val) == "table", 1, "(table expected)")
@@ -1547,5 +1587,142 @@ fm.setTemplate("html", {
       for _, v in pairs(val) do writeVal(v) end
     end,
   }, {autotag = true})
+fm.setTemplate("cgi", function(cmd)
+  if not cmd or not cmd[1] then error('missing command') end
+  local nph = cmd.nph
+  local maxtime = cmd.maxtime or 5
+  local env = {}
+  local envu = cmd.env or {}
+  local envd = #envu > 0 and envu or {
+    SERVER_ADDR = FormatIp(GetServerAddr()),
+    SERVER_PORT = select(2, GetServerAddr()),
+    SERVER_SOFTWARE = fm.getBrand(),
+    REMOTE_HOST = GetHost(),
+    REMOTE_ADDR = FormatIp(GetRemoteAddr()),
+    REMOTE_INDENT = ParseUrl(GetUrl()).user,
+    REQUEST_SCHEME = GetScheme(),
+    REQUEST_METHOD = GetMethod(),
+    GATEWAY_INTERFACE = "CGI/1.1",
+    SERVER_PROTOCOL = ("HTTP/%01.1f"):format(GetHttpVersion()/10),
+    QUERY_STRING = EncodeUrl({params = ParseUrl(GetUrl()).params}):sub(2),
+    REQUEST_URI = (
+      function(u) return EncodeUrl({params = u.params, path = u.path})end)(
+      ParseUrl(GetUrl())),
+    HTTPS = GetSslIdentity() and "on" or nil,
+    PATH_INFO = GetPath(),
+    PATH_TRANSLATED = GetEffectivePath(),
+    CONTENT_TYPE = GetHeader("Content-Type"),
+    CONTENT_LENGTH = GetHeader("Content-Length"),
+  }
+  if #envu == 0 then
+    -- provide all the headers
+    for k, v in pairs(GetHeaders()) do envd["HTTP_"..k:upper()] = v end
+    -- overwrite all defaults
+    for k, v in pairs(envu) do envd[k] = v end
+    -- convert to strings unless the value is false
+    for k, v in pairs(envd) do if v then table.insert(env, k.."="..v) end end
+  end
+  local rfd1, wfd1 = unix.pipe(unix.O_CLOEXEC)
+  local rfd2, wfd2 = unix.pipe(unix.O_CLOEXEC)
+  local pid = unix.fork()
+  if pid == 0 then  -- forked child
+    assert(unix.close(GetClientFd()))  -- close client fd to not send anything
+    assert(unix.dup(rfd2, 0))  -- redirect stdin
+    assert(unix.dup(wfd1, 1))  -- redirect stdout
+    assert(unix.dup(wfd1, 2))  -- redirect stderr
+    assert(unix.close(wfd1))
+    assert(unix.close(rfd1))
+    assert(unix.close(wfd2))
+    assert(unix.close(rfd2))
+    assert(unix.sigaction(unix.SIGQUIT, unix.exit))
+    unix.execve(cmd[1], cmd, env)
+    unix.exit(127)
+  else
+    unix.write(wfd2, GetBody())
+    local isactive = true
+    local header = true
+    local done = false
+    assert(unix.sigaction(unix.SIGALRM, function() isactive = false end))
+    assert(unix.setitimer(unix.ITIMER_REAL, 0, 0, maxtime, 0))
+    local cfd = GetClientFd()
+    while true do
+      -- block for a bit until there is output from the launched process
+      local se = (unix.poll({[rfd1] = unix.POLLIN}, maxtime*1000/10) or {})[rfd1] or 0
+      if se & (unix.POLLHUP + unix.POLLERR) > 0 then break end
+
+      -- check if the client is (still) writable
+      local re = (unix.poll({[cfd] = unix.POLLOUT}) or {})[cfd] or 0
+      if re & (unix.POLLHUP + unix.POLLERR) > 0 then break end
+
+      -- check if the process took too long to respond
+      if not isactive then break end
+
+      local data, errno
+      if se & unix.POLLIN > 0 then data, errno = unix.read(rfd1) end
+      -- check for end of file or any descriptor errors
+      if data == "" or errno and errno:errno() == unix.EBADF then break end
+
+      if data then
+        if header then
+          local pos = 1
+          while true do
+            -- allow both CRLF and LF to be handled
+            local spos, epos = data:find("\r?\n", pos, false)
+            if not spos then break end
+            -- found an empty string, which signals the end of headers
+            if spos == pos then header = false; pos = epos + 1; break end
+            local status, reason
+            if pos == 1 then
+              status, reason = data:sub(pos, spos-1):match("^HTTP/%d%.%d%s+(%d%d%d)%s+(.+)")
+            end
+            if status then
+              -- found the status line
+              SetStatus(status, reason)
+            else
+              -- found something that may be a header
+              local name, value = data:sub(pos, spos-1):match("^(%a[%w_-]+):%s*(.+)")
+              -- check if the header has a valid syntax
+              -- if not, skip it and handle it as part of the data;
+              -- this may happen if an error is thrown instead of a valid context
+              local ok, err = pcall(SetHeader, name, value)
+              if not name or not value or not ok then
+                header = false
+                break
+              end
+            end
+            pos = epos + 1
+          end
+          -- finished parsing headers, so remove them from the data
+          if not header then
+            -- if nph is requested, then close the connection when done
+            if nph then SetHeader("Connection", "close") end
+            if pos > 1 then data = data:sub(pos) end
+          end
+        end
+        -- if the headers are set, write the response
+        if not header then
+          Write(data)
+          if nph then coroutine.yield() end
+        end
+      -- check if reading was interrupted or wasn't done
+      elseif not data and (not errno or errno:errno() == unix.EINTR) then
+        -- closing connection will fail on send
+        -- if it doesn't fail, then redo the interrupted read
+      else  -- report an error and stop
+        -- TODO: log error
+        break
+      end
+      -- stop reading if the process is already done
+      done = not unix.wait(pid, unix.WNOHANG)
+      if done then break end
+    end
+    unix.close(rfd1)
+    unix.close(wfd1)
+    unix.close(rfd2)
+    unix.close(wfd2)
+    -- kill launched process if it's still running, as it's been running for too long
+    if not done then assert(unix.kill(pid, unix.SIGTERM)) end
+  end
+end)
 
 return fm

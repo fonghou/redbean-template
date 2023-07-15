@@ -1,1 +1,1 @@
-(Write "<h1>Hello, world!</h1>")
+(Write "<h1>Welcome!</h1>")

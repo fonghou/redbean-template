@@ -62,9 +62,9 @@ ProgramMaxPayloadSize(2 * GetAssetSize(WIKI_PATH))
 ProgramCache(0)
 
 -- fullmoon routes
-H = require("fullmoon")
+local fm = require("fullmoon")
 
-H.setRoute("/*.lua", function(req)
+fm.setRoute("/*.lua", function(req)
   local file = req.params.splat .. ".fnl"
   if path.exists(file) then
     fennel.dofile(file)
@@ -73,7 +73,5 @@ H.setRoute("/*.lua", function(req)
   return false
 end)
 
-require("hello")
-
-H.setRoute("/*catchall", H.servePath)
-H.run()
+fm.setRoute("/*catchall", fm.servePath)
+fm.run()
