@@ -1,5 +1,5 @@
 SERVER = server.com
-SOURCES = .args .init.lua .lua $(shell ls *.fnl | sed 's/.fnl$$/.lua/')
+SOURCES = .args .init.lua .lua $(shell fd -e fnl | sed 's/.fnl$$/.lua/')
 
 ${SERVER}: redbean.com db ${SOURCES}
 	cp redbean.com ${SERVER} && zip -r ${SERVER} ${SOURCES} wiki.*
@@ -24,7 +24,7 @@ repl:
 
 .PHONY: reload
 reload:
-	ls .init.lua .lua/*.fnl | entr -r ./${SERVER} -p 8888 -u -D .
+	find .args .init.lua .lua | entr -r ./${SERVER} -p 8888 -u -D .
 
 .PHONY: deps
 deps:

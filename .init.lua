@@ -64,6 +64,8 @@ ProgramCache(0)
 -- fullmoon routes
 local fm = require("fullmoon")
 
+fm.setTemplate({ "/tmpl/", html = "fmt", lua = "fmg" })
+
 fm.setRoute("/*.lua", function(req)
   local file = req.params.splat .. ".fnl"
   if path.exists(file) then
@@ -74,4 +76,5 @@ fm.setRoute("/*.lua", function(req)
 end)
 
 fm.setRoute("/*catchall", fm.servePath)
+
 fm.run()
