@@ -16,7 +16,7 @@ clean:
 
 .PHONY: debug
 debug:
-	DEBUG=1 rlwrap ./${SERVER} -p 8888 -u -D .
+	DEBUG=1 rlwrap ./${SERVER} -p 8888 -uvD .
 
 .PHONY: repl
 repl:
