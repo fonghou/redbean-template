@@ -1,6 +1,6 @@
 -- setup fennel
-local fennel = require("fennel")
-local path = require("path")
+local fennel = require "fennel"
+local path = require "path"
 
 local make_searcher = function(env)
   return function(module_name)
@@ -20,9 +20,21 @@ table.insert(package.searchers, make_searcher(_G))
 table.insert(fennel["macro-searchers"], make_searcher("_COMPILER"))
 debug.traceback = fennel.traceback
 
+function Dofile(file)
+  if path.exists(file .. ".fnl") then
+    file = file .. ".fnl"
+    Log(kLogVerbose, string.format("dofile('%s')", file))
+    fennel.dofile(file)
+  else
+    file = file .. ".lua"
+    Log(kLogVerbose, string.format("dofile('%s')", file))
+    dofile(file)
+  end
+end
+
 -- setup debugger
 if os.getenv("DEBUG") then
-  local dbg = require("debugger")
+  local dbg = require "debugger"
   _G.dbg = dbg
   _G.error = dbg.error
   _G.assert = dbg.assert
@@ -30,15 +42,15 @@ else
   _G.dbg = function() end
 end
 
--- setup SQLite3 db
-local sqlite3 = require("lsqlite3")
+-- SQLite3 db
+local sqlite3 = require "lsqlite3"
 
 function ConnectDb()
   if not Db then
     Db = sqlite3.open("db/sqlite3")
     Db:busy_timeout(1000)
-    Db:exec("PRAGMA journal_mode=WAL")
-    Db:exec("PRAGMA synchronous=NORMAL")
+    Db:exec "PRAGMA journal_mode=WAL"
+    Db:exec "PRAGMA synchronous=NORMAL"
   end
   return Db
 end
@@ -52,27 +64,19 @@ if GetHostOs() == "WINDOWS" then
   if not there then
     assert(Barf(WIKI_PATH, Slurp("/zip/wiki.html")))
   end
-  -- serve from disc rather than embeded asset. Same as -D
+  -- serve from disk rather than embeded asset. Same as -D
   ProgramDirectory(".")
 end
 
 -- Large enough to send entire wiki file
 ProgramMaxPayloadSize(2 * GetAssetSize(WIKI_PATH))
 
-ProgramCache(0)
-
 -- fullmoon routes
-local fm = require("fullmoon")
-
-fm.setTemplate({ "/tmpl/", html = "fmt", lua = "fmg" })
+local fm = require "fullmoon"
 
 fm.setRoute("/*.lua", function(req)
-  local file = req.params.splat .. ".fnl"
-  if path.exists(file) then
-    fennel.dofile(file)
-    return true
-  end
-  return false
+  Dofile(req.params.splat)
+  return true
 end)
 
 fm.setRoute("/*catchall", fm.servePath)

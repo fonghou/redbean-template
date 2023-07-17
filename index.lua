@@ -1,4 +1,3 @@
-local fennel = require "fennel"
 local html = Write
 
 html [[
@@ -12,6 +11,6 @@ html [[
   <body>
 ]]
 
-fennel.dofile "todo.fnl"
+Dofile "todo"
 
 html "</body></html>"

@@ -16,7 +16,7 @@ clean:
 
 .PHONY: debug
 debug:
-	DEBUG=1 rlwrap ./${SERVER} -p 8888 -uvD .
+	DEBUG=1 rlwrap ./${SERVER} -p 8888 -uv -D .
 
 .PHONY: repl
 repl:
@@ -24,7 +24,7 @@ repl:
 
 .PHONY: reload
 reload:
-	find .args .init.lua .lua | entr -r ./${SERVER} -p 8888 -u -D .
+	find .args .init.lua .lua | entr -r ./${SERVER} -p 8888 -D .
 
 .PHONY: deps
 deps:
