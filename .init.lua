@@ -20,15 +20,21 @@ table.insert(package.searchers, make_searcher(_G))
 table.insert(fennel["macro-searchers"], make_searcher("_COMPILER"))
 debug.traceback = fennel.traceback
 
-function Dofile(file)
-  if path.exists(file .. ".fnl") then
-    file = file .. ".fnl"
+function Dofile(fname)
+  local file = fname .. ".fnl"
+  if path.exists(file) then
     Log(kLogVerbose, string.format("dofile('%s')", file))
-    fennel.dofile(file)
-  else
-    file = file .. ".lua"
+    return fennel.dofile(file)
+  end
+  file = fname .. ".lua"
+  if path.exists(file) then
     Log(kLogVerbose, string.format("dofile('%s')", file))
-    dofile(file)
+    return dofile(file)
+  end
+  file = "/zip/" .. fname .. ".lua"
+  if path.exists(file) then
+    Log(kLogVerbose, string.format("dofile('%s')", file))
+    return dofile(file)
   end
 end
 
