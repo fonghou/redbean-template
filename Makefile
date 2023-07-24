@@ -2,7 +2,7 @@ SERVER = server.com
 SOURCES = .args .init.lua .lua $(shell fd -e lua -e fnl | sed 's/.fnl$$/.lua/')
 
 ${SERVER}: redbean.com db ${SOURCES}
-	cp redbean.com ${SERVER} && zip -r ${SERVER} ${SOURCES} wiki.*
+	cp redbean.com ${SERVER} && zip -r ${SERVER} ${SOURCES} tmpl/
 
 db: sqlite3.com
 	( [ -d db ] || mkdir db ) && ./sqlite3.com db/sqlite3 < schema.sql
@@ -24,7 +24,7 @@ repl:
 
 .PHONY: reload
 reload:
-	find .args .init.lua .lua | entr -r ./${SERVER} -p 8888 -D .
+	find .init.lua .lua tmpl | entr -r ./${SERVER} -p 8888 -D .
 
 .PHONY: deps
 deps:
