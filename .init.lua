@@ -65,6 +65,7 @@ end
 local fm = require "fullmoon"
 
 require "routes"
+require "views"
 
 fm.setRoute("/*.lua", function(req)
   Dofile(req.params.splat)

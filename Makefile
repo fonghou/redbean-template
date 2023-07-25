@@ -1,14 +1,18 @@
 SERVER = server.com
-SOURCES = .args .init.lua .lua $(shell fd -e lua -e fnl | sed 's/.fnl$$/.lua/')
+LUASRC = .args .init.lua .lua $(shell fd -e lua -e fnl -E '*macros.fnl' | sed 's/.fnl$$/.lua/')
 
-${SERVER}: redbean.com db ${SOURCES}
-	cp redbean.com ${SERVER} && zip -r ${SERVER} ${SOURCES} tmpl/
+${SERVER}: redbean.com db ${LUASRC}
+	cp redbean.com ${SERVER} && zip -r ${SERVER} ${LUASRC} tmpl/
 
 db: sqlite3.com
 	( [ -d db ] || mkdir db ) && ./sqlite3.com db/sqlite3 < schema.sql
 
 %.lua: %.fnl
-	fennel --add-macro-path '.lua/?.fnl' -c $< >$@
+	fennel -c $< >$@
+
+.PHONY: js
+js:
+	npx squint compile asset/*.cljs
 
 .PHONY: clean
 clean:
