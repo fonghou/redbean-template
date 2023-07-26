@@ -1,8 +1,8 @@
 SERVER = server.com
-LUASRC = .args .init.lua .lua $(shell fd -e lua -e fnl -E '*macros.fnl' | sed 's/.fnl$$/.lua/')
+LUASRC = $(shell fd -e lua -e fnl -E '*macros.fnl' | sed 's/.fnl$$/.lua/')
 
 ${SERVER}: redbean.com db ${LUASRC}
-	cp redbean.com ${SERVER} && zip -r ${SERVER} ${LUASRC} tmpl/
+	cp redbean.com ${SERVER} && zip -r ${SERVER} .args .init.lua .lua ${LUASRC} tmpl/
 
 db: sqlite3.com
 	( [ -d db ] || mkdir db ) && ./sqlite3.com db/sqlite3 < schema.sql

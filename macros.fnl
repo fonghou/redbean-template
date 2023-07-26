@@ -1,4 +1,4 @@
-(fn *kv [...]
+(fn *kv* [...]
   (let [args [...]
         t {}]
     (var j 0)
@@ -10,7 +10,10 @@
       (set k i)
       (tset t (. args i) (. args (+ i 1))))
     (when (= k (length args))
-      (tset t (+ j 1) (. args k)))
+      (let [last (. args k)]
+        (if (sequence? last)
+          (each [_ x (ipairs last)] (table.insert t x))
+          (table.insert t last))))
     t))
   
-{: *kv}
+{: *kv*}
