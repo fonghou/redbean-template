@@ -1,7 +1,7 @@
 local fm = require "fullmoon"
 
-fm.setRoute("", fm.servePath("/index.lua"))
+fm.setRoute("/", fm.servePath("/index.lua"))
 
-fm.setRoute("/news", fm.serveResponse(286))
+fm.setRoute("/todos", fm.servePath("/todo.lua"))
 
-fm.setRoute("/todo", fm.servePath("/todo.lua"))
+fm.setRoute("/contacts", fm.serveContent("contacts"))

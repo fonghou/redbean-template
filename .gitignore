@@ -2,3 +2,5 @@
 *.conf
 db/
 .vim/
+.clj-kondo/
+.lsp/

@@ -1,4 +1,7 @@
-(fn *kv* [...]
+;; fennel-ls: macro-file
+;; [nfnl-macro]
+
+(fn *kv [...]
   (let [args [...]
         t {}]
     (var j 0)
@@ -10,10 +13,7 @@
       (set k i)
       (tset t (. args i) (. args (+ i 1))))
     (when (= k (length args))
-      (let [last (. args k)]
-        (if (sequence? last)
-          (each [_ x (ipairs last)] (table.insert t x))
-          (table.insert t last))))
+      (table.insert t (. args k)))
     t))
   
-{: *kv*}
+{: *kv}
