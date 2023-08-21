@@ -24,7 +24,7 @@ debug:
 
 .PHONY: repl
 repl:
-	./${SERVER} -F .init.lua -e "require'fennel'.repl()" -i
+	./${SERVER} -i -D . -F .init.lua -e "require'fennel'.repl()"
 
 .PHONY: reload
 reload:
@@ -32,12 +32,10 @@ reload:
 
 .PHONY: deps
 deps:
-	curl https://redbean.dev/redbean-latest.com >redbean.com && chmod +x redbean.com
-	curl https://redbean.dev/sqlite3.com >sqlite3.com && chmod +x sqlite3.com
 	curl https://raw.githubusercontent.com/pkulchenko/fullmoon/master/fullmoon.lua >.lua/fullmoon.lua
 	curl https://raw.githubusercontent.com/slembcke/debugger.lua/master/debugger.lua >.lua/debugger.lua
-	curl https://raw.githubusercontent.com/starwing/luaiter/master/iter.lua >.lua/iter.lua
+	curl https://raw.githubusercontent.com/kikito/inspect.lua/master/inspect.lua >.lua/inspect.lua
+	curl https://raw.githubusercontent.com/neovim/neovim/master/runtime/lua/vim/iter.lua >.lua/iter.lua
 	curl https://raw.githubusercontent.com/andreyorst/itable/main/src/itable.fnl >.lua/itable.fnl
-	curl https://tiddlywiki.com/empty.html >wiki.html
 	cp ~/github/fennel/fennel.lua .lua/
 	sudo sh -c "echo ':APE:M::MZqFpD::/usr/bin/ape:' >/proc/sys/fs/binfmt_misc/register"

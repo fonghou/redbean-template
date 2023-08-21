@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: MIT
+-- SPDX-FileCopyrightText: Calvin Rose and contributors
 package.preload["fennel.repl"] = package.preload["fennel.repl"] or function(...)
   local utils = require("fennel.utils")
   local parser = require("fennel.parser")

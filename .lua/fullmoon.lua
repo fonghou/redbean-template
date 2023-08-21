@@ -3,7 +3,7 @@
 -- Copyright 2021-23 Paul Kulchenko
 --
 
-local NAME, VERSION = "fullmoon", "0.376"
+local NAME, VERSION = "fullmoon", "0.377"
 
 --[[-- support functions --]]--
 
@@ -20,7 +20,10 @@ if not setfenv then -- Lua 5.2+; this assumes f is a function
       idx = idx + 1
     until not name
   end
-  getfenv = function (f) return(select(2, findenv(f)) or _G) end
+  getfenv = function (f)
+    -- if the function is not provided, use the caller
+    return(select(2, findenv(f or debug.getinfo(2,"f").func)) or _G)
+  end
   setfenv = function (f, t)
     local level = findenv(f)
     if level then debug.upvaluejoin(f, level, function() return t end, 1) end
@@ -398,7 +401,7 @@ local function render(name, opt)
   if #stack == 0 then stack, blocks = {}, {} end
   -- return template results or an empty string to indicate completion
   -- this is useful when the template does direct write to the output buffer
-  return res or "", more or templates[name].ContentType
+  return res or "", more or {ContentType = templates[name].ContentType}
 end
 
 local function setTemplate(name, code, opt)
@@ -427,16 +430,22 @@ local function setTemplate(name, code, opt)
   argerror(ctype == "string" or ctype == "function", 2, "(string, table or function expected)")
   LogVerbose("set template '%s'", name)
   local tmpl = templates[params.type or "fmt"]
-  if ctype == "string" then
-    argerror(tmpl ~= nil, 2, "(unknown template type/name)")
-    argerror(tmpl.parser ~= nil, 2, "(referenced template doesn't have a parser)")
-    code = assert(load(tmpl.parser(code), "@".. (params.path or name)))
-  end
   local env = setmetatable({render = render, [org] = opt},
     -- get the metatable from the template that this one is based on,
     -- to make sure the correct environment is being served
     tmpl and getmetatable(getfenv(tmpl.handler)) or
-    (opt or {}).autotag and tmplTagHandlerEnv or tmplRegHandlerEnv)
+    params.autotag and tmplTagHandlerEnv or tmplRegHandlerEnv)
+  if ctype == "string" then
+    argerror(tmpl ~= nil, 2, "(unknown template type/name)")
+    argerror(tmpl.parser ~= nil, 2, "(referenced template doesn't have a parser)")
+    local path = "@" .. (params.path or name)
+    -- assign proper environment in case parser needs it
+    if tmpl.autotag then tmpl.parser = setfenv(tmpl.parser, env) end
+    local func = tmpl.parser(code, path)
+    -- if the parser returns function, use it as is
+    -- if it returns some code, then load and use it
+    code = type(func) == "function" and func or assert(load(func, path))
+  end
   params.handler = setfenv(code, env)
   templates[name] = params
   return {name = true}
@@ -1357,9 +1366,9 @@ local function handleRequest(path)
     }, tmplReqHandlerEnv)
   SetStatus(200) -- set default status; can be reset later
   -- find a match and handle any Lua errors in handlers
-  local co, res, conttype = hcall(matchRoute, path, req)
+  local co, res, headers = hcall(matchRoute, path, req)
   -- execute the (deferred) function and handle any errors
-  while type(res) == "function" do co, res, conttype = hcall(res) end
+  while type(res) == "function" do co, res, headers = hcall(res) end
   local tres = type(res)
   if res == true then
     -- do nothing, as this request was already handled
@@ -1368,21 +1377,18 @@ local function handleRequest(path)
     return error2tmpl(404) -- use 404 template if available
   elseif tres == "string" then
     if #res > 0 then
-      if not conttype then conttype = detectType(res) end
+      if not headers then headers = {ContentType = detectType(res)} end
       Write(res) -- output content as is
     end
   elseif not co then
     LogWarn("unexpected result from action handler: '%s' (%s)", tostring(res), tres)
   end
-  -- set the content type returned by the render
-  if (type(conttype) == "string"
-    and not rawget(req.headers or {}, "ContentType")) then
-    req.headers.ContentType = conttype
-  end
   -- set the headers as returned by the render
-  if type(conttype) == "table" then
+  if type(headers) == "table" then
     if not req.headers then req.headers = {} end
-    for name, value in pairs(conttype) do req.headers[name] = value end
+    for name, value in pairs(headers) do req.headers[name] = value end
+  elseif headers then
+    LogWarn("non-table headers returned from action handler (%s)", tostring(headers))
   end
   setHeaders(req.headers) -- output specified headers
   setCookies(req.cookies) -- output specified cookies
@@ -1507,11 +1513,7 @@ fm.setTemplate("sse", function(val)
       ["X-Accel-Buffering"] = "no",
     }
   end)
-fm.setTemplate("fmg", {
-    parser = function(s)
-      return ([[return render("fmg", %s)]]):format(s)
-    end,
-    function(val)
+local function fmgRender(val)
       argerror(type(val) == "table", 1, "(table expected)")
       local function writeAttrs(opt)
         local doneattr = false
@@ -1598,8 +1600,15 @@ fm.setTemplate("fmg", {
         end
       end
       for _, v in pairs(val) do writeVal(v) end
+    end
+fm.setTemplate("fmg", {
+    autotag = true,
+    parser = function(s, path)
+      local code = setfenv(assert(load("return "..s, path, "t")), getfenv())
+      return function() fmgRender(assert(code())) end
     end,
-  }, {autotag = true})
+    fmgRender,
+  })
 fm.setTemplate("cgi", function(cmd)
   if not cmd or not cmd[1] then error('missing command') end
   local nph = cmd.nph

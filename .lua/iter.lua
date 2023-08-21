@@ -1,1105 +1,1013 @@
-local iter = {
-   NAME    = "iter 0.1",
-   URL     = "https://github.com/starwing/luaiter",
-   LICENSE = "Lua License"
-}
+---@defgroup vim.iter
+---
+--- \*vim.iter()\* is an interface for |iterable|s: it wraps a table or function argument into an
+--- \*Iter\* object with methods (such as |Iter:filter()| and |Iter:map()|) that transform the
+--- underlying source data. These methods can be chained together to create iterator "pipelines".
+--- Each pipeline stage receives as input the output values from the prior stage. The values used in
+--- the first stage of the pipeline depend on the type passed to this function:
+---
+--- - List tables (arrays) pass only the value of each element
+--- - Non-list tables (dictionaries) pass both the key and value of each element
+--- - Function |iterator|s pass all of the values returned by their respective function
+--- - Tables with a metatable implementing |__call()| are treated as function iterators
+---
+--- The iterator pipeline terminates when the original table or function iterator runs out of values
+--- (for function iterators, this means that the first value returned by the function is nil).
+---
+--- Examples:
+--- <pre>lua
+---   local it = vim.iter({ 1, 2, 3, 4, 5 })
+---   it:map(function(v)
+---     return v * 3
+---   end)
+---   it:rev()
+---   it:skip(2)
+---   it:totable()
+---   -- { 9, 6, 3 }
+---
+---   -- ipairs() is a function iterator which returns both the index (i) and the value (v)
+---   vim.iter(ipairs({ 1, 2, 3, 4, 5 })):map(function(i, v)
+---     if i > 2 then return v end
+---   end):totable()
+---   -- { 3, 4, 5 }
+---
+---   local it = vim.iter(vim.gsplit('1,2,3,4,5', ','))
+---   it:map(function(s) return tonumber(s) end)
+---   for i, d in it:enumerate() do
+---     print(string.format("Column %d is %d", i, d))
+---   end
+---   -- Column 1 is 1
+---   -- Column 2 is 2
+---   -- Column 3 is 3
+---   -- Column 4 is 4
+---   -- Column 5 is 5
+---
+---   vim.iter({ a = 1, b = 2, c = 3, z = 26 }):any(function(k, v)
+---     return k == 'z'
+---   end)
+---   -- true
+---
+---   local rb = vim.ringbuf(3)
+---   rb:push("a")
+---   rb:push("b")
+---   vim.iter(rb):totable()
+---   -- { "a", "b" }
+--- </pre>
+---
+--- In addition to the |vim.iter()| function, the |vim.iter| module provides
+--- convenience functions like |vim.iter.filter()| and |vim.iter.totable()|.
 
+---@class IterMod
+---@operator call:Iter
+local M = {}
 
-local assert, error, pairs, select, type, getmetatable, setmetatable =
-      assert, error, pairs, select, type, getmetatable, setmetatable
-local load   = _G.loadstring or load
-local unpack = _G.unpack     or table.unpack
-local ceil   = math.ceil
-local floor  = math.floor
-local random = math.random
-local tabcat = table.concat
-local sub    = string.sub
-local format = string.format
-local pack   = table.pack or function(...) return { n = select('#', ...), ... } end
-
-
--- iterator creation
--- there are two categories of iterators: statless iterator and
--- stateful iterator.  In both case, iterator not allowed to change
--- state.
---
--- Stateless iterator should implement "iter" callback that generates
--- next values only from previous value.  It doesn't has internal
--- state.  To copy a stateless iterator, just copy it's essential
--- fields into a new table and makes it as an iterator.
---
--- A stateful iterator has its own modifiable internal state, the
--- "self" table. It still can not change state in iteration, but it
--- can modify it's "self" table.  A stateful iterator should implement
--- "next" callback, accept self table and state to generates next
--- values, by read/write the self table.
---
--- Stateful iterator has a "reset" callback that will be called with
--- one or two arguments.  If only one argument passed, it initlizes
--- the self table to prepare a new iteration going.  If it's called by
--- two arguments, "this" and "other", it should copy modifiable
--- internal state from "other", the same type iterator, and ensure
--- itself generates the same results as "other".
---
--- If iterators has sub iterator, i.e. composition iterator, they are
--- on iterator's array part, e.g. map() iterator has a sub iterator,
--- it puts on map iterator subscript 1.
---
--- All iterators has several public routines:
---    - rewind: rewind iterator to generates values from start.
---    - clone:  clone a iterator
---    - call directly: generates next values.
---    - as a iterator: iterates values.
---
--- iterators' internal callbacks must not be called directly:
---    - reset: prepare another iteration.
---    - next:  disable the "iter" callback and makes iterator stateful.
---    - iter:  makes iterator stateless.
-
-
-local Iter   = {}
-Iter.__name  = "iterator"
+---@class Iter
+local Iter = {}
 Iter.__index = Iter
-
--- internal callback defaults
-function Iter:reset(other)
-   if other then
-      for i, base in ipairs(other) do self[i] = base:clone() end
-   else
-      for _, base in ipairs(self) do base:rewind() end
-   end
-   return self
+Iter.__call = function(self)
+  return self:next()
 end
 
-local function collect_current(self, key, ...)
-   self.current = key
-   return key, ...
+--- Special case implementations for iterators on list tables.
+---@class ListIter : Iter
+---@field _table table Underlying table data
+---@field _head number Index to the front of a table iterator
+---@field _tail number Index to the end of a table iterator (exclusive)
+local ListIter = {}
+ListIter.__index = setmetatable(ListIter, Iter)
+ListIter.__call = function(self)
+  return self:next()
 end
 
-function Iter:next(state)
-   return collect_current(self, self.iter(state, self.current))
+--- Packed tables use this as their metatable
+local packedmt = {}
+
+local function unpack(t)
+  if type(t) == 'table' and getmetatable(t) == packedmt then
+    return _G.unpack(t, 1, t.n)
+  end
+  return t
 end
 
-local function collect(self, key, ...)
-   if key == nil then self.stopped = true end
-   return key, ...
+local function pack(...)
+  local n = select('#', ...)
+  if n > 1 then
+    return setmetatable({ n = n, ... }, packedmt)
+  end
+  return ...
 end
 
-function Iter:__call()
-   if self.stopped then return end
-   return collect(self, self:next(self.state))
+local function sanitize(t)
+  if type(t) == 'table' and getmetatable(t) == packedmt then
+    -- Remove length tag
+    t.n = nil
+  end
+  return t
 end
 
-function Iter:rewind()
-   if self.stopped then
-      self.stopped, self.current = nil, self.init
-      if self.next ~= Iter.next then
-         return self:reset() or self
-      end
-   end
-   return self
+--- Determine if the current iterator stage should continue.
+---
+--- If any arguments are passed to this function, then return those arguments
+--- and stop the current iterator stage. Otherwise, return true to signal that
+--- the current stage should continue.
+---
+---@param ... any Function arguments.
+---@return boolean True if the iterator stage should continue, false otherwise
+---@return any Function arguments.
+local function continue(...)
+  if select(1, ...) ~= nil then
+    return false, ...
+  end
+  return true
 end
 
-function Iter:clone()
-   local new = setmetatable({ state = self.state }, Iter)
-   if self.next == Iter.next then
-      new.iter    = self.iter
-      new.init    = self.init
-      new.current = self.current
-   else
-      new.next  = self.next
-      new.reset = self.reset
-      new = new:reset(self) or new
-   end
-   return new
+--- If no input arguments are given return false, indicating the current
+--- iterator stage should stop. Otherwise, apply the arguments to the function
+--- f. If that function returns no values, the current iterator stage continues.
+--- Otherwise, those values are returned.
+---
+---@param f function Function to call with the given arguments
+---@param ... any Arguments to apply to f
+---@return boolean True if the iterator pipeline should continue, false otherwise
+---@return any Return values of f
+local function apply(f, ...)
+  if select(1, ...) ~= nil then
+    return continue(f(...))
+  end
+  return false
 end
 
-local function new_stateless(func, state, init)
-   local self = { iter = func, state = state, init = init, current = init }
-   if not state then self.state = self end
-   return setmetatable(self, Iter)
+--- Add a filter step to the iterator pipeline.
+---
+--- Example:
+--- <pre>lua
+--- local bufs = vim.iter(vim.api.nvim_list_bufs()):filter(vim.api.nvim_buf_is_loaded)
+--- </pre>
+---
+---@param f function(...):bool Takes all values returned from the previous stage
+---                            in the pipeline and returns false or nil if the
+---                            current iterator element should be removed.
+---@return Iter
+function Iter.filter(self, f)
+  return self:map(function(...)
+    if f(...) then
+      return ...
+    end
+  end)
 end
 
-local function new_stateful(reset, func, state)
-   local self = { reset = reset, next = func, state = state }
-   if not state then self.state = self end
-   return reset(setmetatable(self, Iter)) or self
+---@private
+function ListIter.filter(self, f)
+  local inc = self._head < self._tail and 1 or -1
+  local n = self._head
+  for i = self._head, self._tail - inc, inc do
+    local v = self._table[i]
+    if f(unpack(v)) then
+      self._table[n] = v
+      n = n + inc
+    end
+  end
+  self._tail = n
+  return self
 end
 
-local function nil_iter() end
-local function string_iter(state, key)
-   key = (key or 0) + 1
-   local ch = sub(state, key, key)
-   if ch == "" then return end
-   return key, ch
+--- Add a map step to the iterator pipeline.
+---
+--- If the map function returns nil, the value is filtered from the iterator.
+---
+--- Example:
+--- <pre>lua
+--- local it = vim.iter({ 1, 2, 3, 4 }):map(function(v)
+---   if v % 2 == 0 then
+---     return v * 3
+---   end
+--- end)
+--- it:totable()
+--- -- { 6, 12 }
+--- </pre>
+---
+---@param f function(...):any Mapping function. Takes all values returned from
+---                           the previous stage in the pipeline as arguments
+---                           and returns one or more new values, which are used
+---                           in the next pipeline stage. Nil return values
+---                           are filtered from the output.
+---@return Iter
+function Iter.map(self, f)
+  -- Implementation note: the reader may be forgiven for observing that this
+  -- function appears excessively convoluted. The problem to solve is that each
+  -- stage of the iterator pipeline can return any number of values, and the
+  -- number of values could even change per iteration. And the return values
+  -- must be checked to determine if the pipeline has ended, so we cannot
+  -- naively forward them along to the next stage.
+  --
+  -- A simple approach is to pack all of the return values into a table, check
+  -- for nil, then unpack the table for the next stage. However, packing and
+  -- unpacking tables is quite slow. There is no other way in Lua to handle an
+  -- unknown number of function return values than to simply forward those
+  -- values along to another function. Hence the intricate function passing you
+  -- see here.
+
+  local next = self.next
+
+  --- Drain values from the upstream iterator source until a value can be
+  --- returned.
+  ---
+  --- This is a recursive function. The base case is when the first argument is
+  --- false, which indicates that the rest of the arguments should be returned
+  --- as the values for the current iteration stage.
+  ---
+  ---@param cont boolean If true, the current iterator stage should continue to
+  ---                    pull values from its upstream pipeline stage.
+  ---                    Otherwise, this stage is complete and returns the
+  ---                    values passed.
+  ---@param ... any Values to return if cont is false.
+  ---@return any
+  local function fn(cont, ...)
+    if cont then
+      return fn(apply(f, next(self)))
+    end
+    return ...
+  end
+
+  self.next = function()
+    return fn(apply(f, next(self)))
+  end
+  return self
 end
 
-local function newiter(v, state, init)
-   local t = type(v)
-   if t == "table" then
-      if getmetatable(v) == Iter then return v:clone() end
-      return new_stateless(pairs(v))
-   elseif t == "function" then
-      return new_stateless(v, state, init)
-   elseif t == "string" then
-      return new_stateless(string_iter, v, 0)
-   elseif t == "nil" then
-      return new_stateless(nil_iter)
-   end
-   local mt = getmetatable(v)
-   if mt and mt.__pairs then return new_stateful(pairs(v)) end
-   error(format('attempt to iterate a %s value', t))
+---@private
+function ListIter.map(self, f)
+  local inc = self._head < self._tail and 1 or -1
+  local n = self._head
+  for i = self._head, self._tail - inc, inc do
+    local v = pack(f(unpack(self._table[i])))
+    if v ~= nil then
+      self._table[n] = v
+      n = n + inc
+    end
+  end
+  self._tail = n
+  return self
 end
 
-iter.iter = newiter
-iter.none = function() return iter() end
-
-
--- generators
-
-local function inc_iter(state, key)
-   return key + state
+--- Call a function once for each item in the pipeline.
+---
+--- This is used for functions which have side effects. To modify the values in
+--- the iterator, use |Iter:map()|.
+---
+--- This function drains the iterator.
+---
+---@param f function(...) Function to execute for each item in the pipeline.
+---                       Takes all of the values returned by the previous stage
+---                       in the pipeline as arguments.
+function Iter.each(self, f)
+  local function fn(...)
+    if select(1, ...) ~= nil then
+      f(...)
+      return true
+    end
+  end
+  while fn(self:next()) do
+  end
 end
 
-local function range_iter(state, key)
-   key = key + state.step
-   if key <= state.last then return key end
+---@private
+function ListIter.each(self, f)
+  local inc = self._head < self._tail and 1 or -1
+  for i = self._head, self._tail - inc, inc do
+    f(unpack(self._table[i]))
+  end
+  self._head = self._tail
 end
 
-local function rrange_iter(state, key)
-   key = key + state.step
-   if key >= state.last then return key end
+--- Collect the iterator into a table.
+---
+--- The resulting table depends on the initial source in the iterator pipeline.
+--- List-like tables and function iterators will be collected into a list-like
+--- table. If multiple values are returned from the final stage in the iterator
+--- pipeline, each value will be included in a table.
+---
+--- Examples:
+--- <pre>lua
+--- vim.iter(string.gmatch('100 20 50', '%d+')):map(tonumber):totable()
+--- -- { 100, 20, 50 }
+---
+--- vim.iter({ 1, 2, 3 }):map(function(v) return v, 2 * v end):totable()
+--- -- { { 1, 2 }, { 2, 4 }, { 3, 6 } }
+---
+--- vim.iter({ a = 1, b = 2, c = 3 }):filter(function(k, v) return v % 2 ~= 0 end):totable()
+--- -- { { 'a', 1 }, { 'c', 3 } }
+--- </pre>
+---
+--- The generated table is a list-like table with consecutive, numeric indices.
+--- To create a map-like table with arbitrary keys, use |Iter:fold()|.
+---
+---
+---@return table
+function Iter.totable(self)
+  local t = {}
+
+  while true do
+    local args = pack(self:next())
+    if args == nil then
+      break
+    end
+
+    t[#t + 1] = sanitize(args)
+  end
+  return t
 end
 
-local function range(first, last, step)
-   if last == nil and step == nil then
-      if not first or first >= 0 then
-         return range(1, first, 1)
+---@private
+function ListIter.totable(self)
+  if self.next ~= ListIter.next or self._head >= self._tail then
+    return Iter.totable(self)
+  end
+
+  local needs_sanitize = getmetatable(self._table[1]) == packedmt
+
+  -- Reindex and sanitize.
+  local len = self._tail - self._head
+
+  if needs_sanitize then
+    for i = 1, len do
+      self._table[i] = sanitize(self._table[self._head - 1 + i])
+    end
+  else
+    for i = 1, len do
+      self._table[i] = self._table[self._head - 1 + i]
+    end
+  end
+
+  for i = len + 1, table.maxn(self._table) do
+    self._table[i] = nil
+  end
+
+  self._head = 1
+  self._tail = len + 1
+
+  return self._table
+end
+
+--- Fold ("reduce") an iterator or table into a single value.
+---
+--- Examples:
+--- <pre>lua
+--- -- Create a new table with only even values
+--- local t = { a = 1, b = 2, c = 3, d = 4 }
+--- local it = vim.iter(t)
+--- it:filter(function(k, v) return v % 2 == 0 end)
+--- it:fold({}, function(t, k, v)
+---   t[k] = v
+---   return t
+--- end)
+--- -- { b = 2, d = 4 }
+--- </pre>
+---
+---@generic A
+---
+---@param init A Initial value of the accumulator.
+---@param f function(acc:A, ...):A Accumulation function.
+---@return A
+function Iter.fold(self, init, f)
+  local acc = init
+
+  --- Use a closure to handle var args returned from iterator
+  local function fn(...)
+    if select(1, ...) ~= nil then
+      acc = f(acc, ...)
+      return true
+    end
+  end
+
+  while fn(self:next()) do
+  end
+  return acc
+end
+
+---@private
+function ListIter.fold(self, init, f)
+  local acc = init
+  local inc = self._head < self._tail and 1 or -1
+  for i = self._head, self._tail - inc, inc do
+    acc = f(acc, unpack(self._table[i]))
+  end
+  return acc
+end
+
+--- Return the next value from the iterator.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter(string.gmatch('1 2 3', '%d+')):map(tonumber)
+--- it:next()
+--- -- 1
+--- it:next()
+--- -- 2
+--- it:next()
+--- -- 3
+---
+--- </pre>
+---
+---@return any
+function Iter.next(self) -- luacheck: no unused args
+  -- This function is provided by the source iterator in Iter.new. This definition exists only for
+  -- the docstring
+end
+
+---@private
+function ListIter.next(self)
+  if self._head ~= self._tail then
+    local v = self._table[self._head]
+    local inc = self._head < self._tail and 1 or -1
+    self._head = self._head + inc
+    return unpack(v)
+  end
+end
+
+--- Reverse an iterator.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter({ 3, 6, 9, 12 }):rev()
+--- it:totable()
+--- -- { 12, 9, 6, 3 }
+---
+--- </pre>
+---
+---@return Iter
+function Iter.rev(self)
+  error('rev() requires a list-like table')
+  return self
+end
+
+---@private
+function ListIter.rev(self)
+  local inc = self._head < self._tail and 1 or -1
+  self._head, self._tail = self._tail - inc, self._head - inc
+  return self
+end
+
+--- Peek at the next value in the iterator without consuming it.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter({ 3, 6, 9, 12 })
+--- it:peek()
+--- -- 3
+--- it:peek()
+--- -- 3
+--- it:next()
+--- -- 3
+---
+--- </pre>
+---
+---@return any
+function Iter.peek(self) -- luacheck: no unused args
+  error('peek() requires a list-like table')
+end
+
+---@private
+function ListIter.peek(self)
+  if self._head ~= self._tail then
+    return self._table[self._head]
+  end
+end
+
+--- Find the first value in the iterator that satisfies the given predicate.
+---
+--- Advances the iterator. Returns nil and drains the iterator if no value is found.
+---
+--- Examples:
+--- <pre>lua
+---
+--- local it = vim.iter({ 3, 6, 9, 12 })
+--- it:find(12)
+--- -- 12
+---
+--- local it = vim.iter({ 3, 6, 9, 12 })
+--- it:find(20)
+--- -- nil
+---
+--- local it = vim.iter({ 3, 6, 9, 12 })
+--- it:find(function(v) return v % 4 == 0 end)
+--- -- 12
+---
+--- </pre>
+---
+---@return any
+function Iter.find(self, f)
+  if type(f) ~= 'function' then
+    local val = f
+    f = function(v)
+      return v == val
+    end
+  end
+
+  local result = nil
+
+  --- Use a closure to handle var args returned from iterator
+  local function fn(...)
+    if select(1, ...) ~= nil then
+      if f(...) then
+        result = pack(...)
       else
-         return range(-1, first, -1)
+        return true
       end
-   end
-   step = step or 1
-   if step == 0 then return newiter() end
-   if last == nil then
-      return new_stateless(inc_iter, step, first - step)
-   end
-   local self = new_stateless(step >= 0 and range_iter or rrange_iter,
-                              nil, first - step)
-   local state = self.state
-   state.first, state.last, state.step = first, last, step
-   return self
+    end
+  end
+
+  while fn(self:next()) do
+  end
+  return unpack(result)
 end
 
-local function rand_iter()       return random() end
-local function rand2_iter(state) return random(state.first, state.last) end
-
-local function rand(first, last)
-   if not first and not last then
-      return new_stateless(rand_iter)
-   elseif not last then
-      return rand(0, first)
-   end
-   local self = new_stateless(rand2_iter)
-   local state = self.state
-   state.first, state.last = first, last
-   return self
+--- Find the first value in the iterator that satisfies the given predicate, starting from the end.
+---
+--- Advances the iterator. Returns nil and drains the iterator if no value is found.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Examples:
+--- <pre>lua
+---
+--- local it = vim.iter({ 1, 2, 3, 2, 1 }):enumerate()
+--- it:rfind(1)
+--- -- 5	1
+--- it:rfind(1)
+--- -- 1	1
+---
+--- </pre>
+---
+---@see Iter.find
+---
+---@return any
+function Iter.rfind(self, f) -- luacheck: no unused args
+  error('rfind() requires a list-like table')
 end
 
-local function array_reset(self, other)
-   self.index = other and other.index or 0
+---@private
+function ListIter.rfind(self, f) -- luacheck: no unused args
+  if type(f) ~= 'function' then
+    local val = f
+    f = function(v)
+      return v == val
+    end
+  end
+
+  local inc = self._head < self._tail and 1 or -1
+  for i = self._tail - inc, self._head, -inc do
+    local v = self._table[i]
+    if f(unpack(v)) then
+      self._tail = i
+      return unpack(v)
+    end
+  end
+  self._head = self._tail
 end
 
-local function array_next(self, state)
-   local i = self.index + 1
-   local v = state[i]
-   self.index = i
-   return v
+--- Return the next value from the end of the iterator.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Example:
+--- <pre>lua
+--- local it = vim.iter({1, 2, 3, 4})
+--- it:nextback()
+--- -- 4
+--- it:nextback()
+--- -- 3
+--- </pre>
+---
+---@return any
+function Iter.nextback(self) -- luacheck: no unused args
+  error('nextback() requires a list-like table')
 end
 
-local function array(t)
-   assert(t, "table expected")
-   return new_stateful(array_reset, array_next, t)
+function ListIter.nextback(self)
+  if self._head ~= self._tail then
+    local inc = self._head < self._tail and 1 or -1
+    self._tail = self._tail - inc
+    return self._table[self._tail]
+  end
 end
 
-local function resolve1_iter(state, key) if key == nil then return state end end
-local function resolven_iter(state, key) if key == nil then return unpack(state) end end
-
-local function resolve(v, ...)
-   local n = select('#', ...)
-   if n == 0 then return new_stateless(resolve1_iter, v) end
-   local self = pack(v, ...)
-   self.iter  = resolven_iter
-   self.state = self
-   return setmetatable(self, Iter)
+--- Return the next value from the end of the iterator without consuming it.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Example:
+--- <pre>lua
+--- local it = vim.iter({1, 2, 3, 4})
+--- it:peekback()
+--- -- 4
+--- it:peekback()
+--- -- 4
+--- it:nextback()
+--- -- 4
+--- </pre>
+---
+---@return any
+function Iter.peekback(self) -- luacheck: no unused args
+  error('peekback() requires a list-like table')
 end
 
-local function dup1_iter(state) return state end
-local function dupn_iter(state) return unpack(state, 1, state.n) end
-
-local function dup(v, ...)
-   local n = select('#', ...)
-   if n == 0 then return new_stateless(dup1_iter, v) end
-   local self = pack(v, ...)
-   self.iter  = dupn_iter
-   self.state = self
-   return setmetatable(self, Iter)
+function ListIter.peekback(self)
+  if self._head ~= self._tail then
+    local inc = self._head < self._tail and 1 or -1
+    return self._table[self._tail - inc]
+  end
 end
 
-iter.range   = range
-iter.rand    = rand
-iter.array   = array
-iter.resolve = resolve
-iter.dup     = dup
-iter.zeros   = function() return dup(0) end
-iter.ones    = function() return dup(1) end
-
-
--- export routines
-
-local function id(...) return ... end
-
-local function alias(f1, f2, ...)
-   for i = 1, select('#', ...) do
-      local name = select(i, ...)
-      iter[name] = f1
-      Iter[name] = f2
-   end
+--- Skip values in the iterator.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter({ 3, 6, 9, 12 }):skip(2)
+--- it:next()
+--- -- 9
+---
+--- </pre>
+---
+---@param n number Number of values to skip.
+---@return Iter
+function Iter.skip(self, n)
+  for _ = 1, n do
+    local _ = self:next()
+  end
+  return self
 end
 
-local function export0(f, ...)
-   alias(function(...)
-      return f(newiter(...))
-   end, function(self)
-      return f(self:clone())
-   end, ...)
+---@private
+function ListIter.skip(self, n)
+  local inc = self._head < self._tail and n or -n
+  self._head = self._head + inc
+  if (inc > 0 and self._head > self._tail) or (inc < 0 and self._head < self._tail) then
+    self._head = self._tail
+  end
+  return self
 end
 
-local function export1(f, ...)
-   alias(function(arg1, ...)
-      return f(arg1, newiter(...))
-   end, function(self, arg1)
-      return f(arg1, self:clone())
-   end, ...)
+--- Skip values in the iterator starting from the end.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Example:
+--- <pre>lua
+--- local it = vim.iter({ 1, 2, 3, 4, 5 }):skipback(2)
+--- it:next()
+--- -- 1
+--- it:nextback()
+--- -- 3
+--- </pre>
+---
+---@param n number Number of values to skip.
+---@return Iter
+function Iter.skipback(self, n) -- luacheck: no unused args
+  error('skipback() requires a list-like table')
+  return self
 end
 
-local function export2(f, ...)
-   alias(function(arg1, arg2, ...)
-      return f(arg1, arg2, newiter(...))
-   end, function(self, arg1, arg2)
-      return f(arg1, arg2, self:clone())
-   end, ...)
+---@private
+function ListIter.skipback(self, n)
+  local inc = self._head < self._tail and n or -n
+  self._tail = self._tail - inc
+  if (inc > 0 and self._head > self._tail) or (inc < 0 and self._head < self._tail) then
+    self._head = self._tail
+  end
+  return self
 end
 
-local function exportn(f, ...)
-   alias(f, f, ...)
+--- Return the nth value in the iterator.
+---
+--- This function advances the iterator.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter({ 3, 6, 9, 12 })
+--- it:nth(2)
+--- -- 6
+--- it:nth(2)
+--- -- 12
+---
+--- </pre>
+---
+---@param n number The index of the value to return.
+---@return any
+function Iter.nth(self, n)
+  if n > 0 then
+    return self:skip(n - 1):next()
+  end
 end
 
-
--- slicing
-
-local function takedrop_reset(self, other)
-   Iter.reset(self, other)
-   self.remain = other and other.remain or self.state
+--- Return the nth value from the end of the iterator.
+---
+--- This function advances the iterator.
+---
+--- Only supported for iterators on list-like tables.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter({ 3, 6, 9, 12 })
+--- it:nthback(2)
+--- -- 9
+--- it:nthback(2)
+--- -- 3
+---
+--- </pre>
+---
+---@param n number The index of the value to return.
+---@return any
+function Iter.nthback(self, n)
+  if n > 0 then
+    return self:skipback(n - 1):nextback()
+  end
 end
 
-local function taken_next(self)
-   local remain = self.remain - 1
-   if remain < 0 then return end
-   self.remain = remain
-   return self[1]()
+--- Slice an iterator, changing its start and end positions.
+---
+--- This is equivalent to :skip(first - 1):skipback(len - last + 1)
+---
+--- Only supported for iterators on list-like tables.
+---
+---@param first number
+---@param last number
+---@return Iter
+function Iter.slice(self, first, last) -- luacheck: no unused args
+  error('slice() requires a list-like table')
+  return self
 end
 
-local function taken(n, base)
-   local self = new_stateful(takedrop_reset, taken_next, n)
-   self[1] = base
-   return self
+---@private
+function ListIter.slice(self, first, last)
+  return self:skip(math.max(0, first - 1)):skipback(math.max(0, self._tail - last - 1))
 end
 
-local function dropn_next(self)
-   local remain = self.remain
-   if remain then
-      self.remain = nil
-      for _ = 1, remain do
-         if self[1]() == nil then
-            return
-         end
+--- Return true if any of the items in the iterator match the given predicate.
+---
+---@param pred function(...):bool Predicate function. Takes all values returned from the previous
+---                                stage in the pipeline as arguments and returns true if the
+---                                predicate matches.
+function Iter.any(self, pred)
+  local any = false
+
+  --- Use a closure to handle var args returned from iterator
+  local function fn(...)
+    if select(1, ...) ~= nil then
+      if pred(...) then
+        any = true
+      else
+        return true
       end
-   end
-   return self[1]()
+    end
+  end
+
+  while fn(self:next()) do
+  end
+  return any
 end
 
-local function dropn(n, base)
-   local self = new_stateful(takedrop_reset, dropn_next, n)
-   self[1]  = base
-   return self
-end
+--- Return true if all of the items in the iterator match the given predicate.
+---
+---@param pred function(...):bool Predicate function. Takes all values returned from the previous
+---                                stage in the pipeline as arguments and returns true if the
+---                                predicate matches.
+function Iter.all(self, pred)
+  local all = true
 
-local function takewhile_collect(state, key, ...)
-   if key == nil then return end
-   if not state(key, ...) then return end
-   return key, ...
-end
-
-local function takewhile_next(self, state)
-   return takewhile_collect(state, self[1]())
-end
-
-local function takewhile(func, base)
-   local self = new_stateful(Iter.reset, takewhile_next, func or id)
-   self[1] = base
-   return self
-end
-
-local function dropwhile_collect(self, state, key, ...)
-   if key == nil then return end
-   if self.remain ~= true then
-      if state(key, ...) then return dropwhile_collect(self, state, self[1]()) end
-      self.remain = true
-   end
-   return key, ...
-end
-
-local function dropwhile_next(self, state)
-   return dropwhile_collect(self, state, self[1]())
-end
-
-local function dropwhile(func, base)
-   local self = new_stateful(takedrop_reset, dropwhile_next, func or id)
-   self[1] = base
-   return self
-end
-
-export1(taken,     "taken", "take_n", "takeN")
-export1(dropn,     "dropn", "drop_n", "dropN")
-export1(takewhile, "takewhile", "take_while", "takeWhile")
-export1(dropwhile, "dropwhile", "drop_while", "dropWhile")
-
-export1(function(p, base)
-   return type(p) == "function" and takewhile(p, base) or taken(p, base)
-end, "take")
-export1(function(p, base)
-   return type(p) == "function" and dropwhile(p, base) or dropn(p, base)
-end, "drop")
-export2(function(first, last, base)
-   if last < first or last <= 0 then return newiter() end
-   if first < 1 then first = 1 end
-   return taken(last - first + 1, dropn(first-1, base))
-end, "slice")
-export2(function(n, base)
-   return taken(n, base), dropn(n, base)
-end, "split", "span", "splitAt", "split_at")
-
-
--- transforms
-
-local function enum_reset(self, other)
-   Iter.reset(self, other)
-   self.idx = other and other.idx or 0
-   return self
-end
-
-local function enum_collect(self, key, ...)
-   if not key then return end
-   self.idx = self.idx + 1
-   return self.idx, key, ...
-end
-
-local function enum_next(self)
-   return enum_collect(self, self[1]())
-end
-
-local function enumerate(base)
-   local self = new_stateful(enum_reset, enum_next)
-   self[1] = base
-   return self
-end
-
-local function map_collect(func, key, ...)
-   if key ~= nil then return func(key, ...) end
-end
-
-local function map_next(self, state)
-   return map_collect(state, self[1]())
-end
-
-local function map(func, base)
-   local self = new_stateful(Iter.reset, map_next, func or id)
-   self[1] = base
-   return self
-end
-
-local function flatmap_reset(self, other)
-   Iter.reset(self, other)
-   if not other then self[2] = nil end
-end
-
-local function flatmap_collect_base(self, state, key, ...)
-   if key ~= nil then
-      self[2] = newiter(state(key, ...))
-      return self[2]
-   end
-end
-
-local function flatmap_collect(self, state, key, ...)
-   if key ~= nil then return key, ... end
-   if flatmap_collect_base(self, state, self[1]()) then
-      return flatmap_collect(self, state, self[2]())
-   end
-end
-
-local function flatmap_next(self, state)
-   if not self[2] then return flatmap_collect(self, state) end
-   return flatmap_collect(self, state, self[2]())
-end
-
-local function flatmap(func, base)
-   local self = new_stateful(flatmap_reset, flatmap_next, func or id)
-   self[1] = base
-   return self
-end
-
-local function scan_reset(self, other)
-   Iter.reset(self, other)
-   self.current = other and other.current or nil
-end
-
-local function scan_collect(self, state, key, ...)
-   if key == nil then return end
-   if not self.current and not state.acc then
-      return collect_current(self, state.func(key, self[1]()))
-   end
-   return collect_current(self, state.func(self.current or state.acc, key, ...))
-end
-
-local function scan_next(self, state)
-   return scan_collect(self, state, self[1]())
-end
-
-local function scan(func, init, base)
-   local self = new_stateful(scan_reset, scan_next)
-   self.state.func = func or id
-   self.state.acc  = init
-   self[1] = base
-   return self
-end
-
-local function group_reset(self, other)
-   Iter.reset(self, other)
-   if other then
-      if other.collects then
-         local collects = {}
-         for k, v in pairs(other.collects) do
-            collects[k] = v
-         end
-         self.collects = collects
+  local function fn(...)
+    if select(1, ...) ~= nil then
+      if not pred(...) then
+        all = false
+      else
+        return true
       end
-      self.remain = other.remain
-   else
-      self.collects = { n = 0 }
-      self.remain   = self.state
-   end
+    end
+  end
+
+  while fn(self:next()) do
+  end
+  return all
 end
 
-local function group_collect(self, state, key, ...)
-   local collects = self.collects
-   if key == nil then
-      if collects.n == 0 then return end
-      self.collects = nil
-      return collects
-   end
-   local remain = self.remain
-   remain = remain - 1
-   local n, c = collects.n, select('#', ...)
-   collects[n+1] = key
-   for i = 1, c do
-      collects[n+i+1] = select(i, ...)
-   end
-   collects.n = n + c + 1
-   if remain <= 0 then
-      self.remain   = state
-      self.collects = { n = 0 }
-      return collects
-   end
-   self.remain = remain
-   return group_collect(self, state, self[1]())
+--- Return the last item in the iterator.
+---
+--- Drains the iterator.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter(vim.gsplit('abcdefg', ''))
+--- it:last()
+--- -- 'g'
+---
+--- local it = vim.iter({ 3, 6, 9, 12, 15 })
+--- it:last()
+--- -- 15
+---
+--- </pre>
+---
+---@return any
+function Iter.last(self)
+  local last = self:next()
+  local cur = self:next()
+  while cur do
+    last = cur
+    cur = self:next()
+  end
+  return last
 end
 
-local function group_next(self, state)
-   if not self.collects then return end
-   return group_collect(self, state, self[1]())
+---@private
+function ListIter.last(self)
+  local inc = self._head < self._tail and 1 or -1
+  local v = self._table[self._tail - inc]
+  self._head = self._tail
+  return v
 end
 
-local function group(n, base)
-   local self = new_stateful(group_reset, group_next, n)
-   self[1] = base
-   return self
+--- Add an iterator stage that returns the current iterator count as well as the iterator value.
+---
+--- For list tables, prefer
+--- <pre>lua
+--- vim.iter(ipairs(t))
+--- </pre>
+---
+--- over
+--- <pre>lua
+--- vim.iter(t):enumerate()
+--- </pre>
+---
+--- as the former is faster.
+---
+--- Example:
+--- <pre>lua
+---
+--- local it = vim.iter(vim.gsplit('abc', '')):enumerate()
+--- it:next()
+--- -- 1	'a'
+--- it:next()
+--- -- 2	'b'
+--- it:next()
+--- -- 3	'c'
+---
+--- </pre>
+---
+---@return Iter
+function Iter.enumerate(self)
+  local i = 0
+  return self:map(function(...)
+    i = i + 1
+    return i, ...
+  end)
 end
 
-local function groupby_reset(self, other)
-   Iter.reset(self, other)
-   if other then
-      self.collects = other.collects and Iter.reset({}, other.collects) or nil
-      self.dopack   = other.dopack
-   else
-      self.collects = {}
-   end
+---@private
+function ListIter.enumerate(self)
+  local inc = self._head < self._tail and 1 or -1
+  for i = self._head, self._tail - inc, inc do
+    local v = self._table[i]
+    self._table[i] = pack(i, v)
+  end
+  return self
 end
 
-local function groupby_collect(self, state, key, ...)
-   local collects = self.collects
-   if key == nil then
-      self.collects = nil
-      return collects
-   end
-   local oldkey = collects.key
-   local newkey = state(key, ...)
-   if oldkey ~= nil and oldkey ~= newkey then
-      self.collects = self.dopack and { pack(key, ...) } or { (...) }
-      self.collects.key = newkey
-      return collects
-   end
-   collects.key = newkey
-   collects[#collects+1] = self.dopack and pack(key, ...) or (...)
-   return groupby_collect(self, state, self[1]())
-end
-
-local function groupby_next(self, state)
-   if not self.collects then return end
-   return groupby_collect(self, state, self[1]())
-end
-
-local function groupby(func, base)
-   local self = new_stateful(groupby_reset, groupby_next, func or id)
-   self[1] = base
-   return self
-end
-
-export0(enumerate,   "enumerate")
-export1(map,         "map")
-export1(flatmap,     "flatmap", "flat_map", "flatMap")
-export2(scan,        "scan", "accumulate", "reductions")
-export1(group,       "group")
-export1(groupby,     "groupby", "group_by", "groupBy")
-export1(function(func, base)
-   local self = groupby(func, base)
-   self.dopack = true
-   return self
-end, "packgroupby", "pack_group_by", "packGroupBy")
-
-
--- compositions
-
-local function collectiters(self, ...)
-   local n = select('#', ...)
-   if n == 0 then return newiter() end
-   for i = 1, n do
-      self[#self+1] = newiter((select(i, ...)))
-   end
-   return self
-end
-
-local function interleave_reset(self, other)
-   Iter.reset(self, other)
-   self.idx = other and other.idx or 1
-end
-
-local function interleave_collect(self, state, key, ...)
-   if self.retry <= 0 then self.retry = nil; return end
-   local idx = self.idx + 1
-   idx = self[idx] and idx or 1
-   self.idx = idx
-   if key ~= nil or state.notskip then return key, ... end
-   self.retry = self.retry - 1
-   return interleave_collect(self, state, self[idx]())
-end
-
-local function interleave_next(self, state)
-   self.retry = #self
-   return interleave_collect(self, state, self[self.idx]())
-end
-
-local function interleave(...)
-   return collectiters(new_stateful(interleave_reset, interleave_next), ...)
-end
-
-local function zip_reset(self, other)
-   Iter.reset(self, other)
-   self.collects = { n = 0 }
-end
-
-local function zip_collect(self, state, c, key, ...)
-   local collects = self.collects
-   local n = collects.n + 1
-   collects[n] = key
-   if c == #self then
-      local cn = select('#', ...)
-      for i = 1, cn do
-         collects[n+i] = select(i, ...)
+--- Create a new Iter object from a table or iterator.
+---
+---@param src table|function Table or iterator to drain values from
+---@return Iter
+---@private
+function Iter.new(src, ...)
+  local it = {}
+  if type(src) == 'table' then
+    local mt = getmetatable(src)
+    if mt and type(mt.__call) == 'function' then
+      ---@private
+      function it.next()
+        return src()
       end
-      n = n + cn
-   end
-   collects.n = n
-   c = c + 1
-   if not self[c] then
-      if collects[1] == nil then return end
-      if state.notskip then
-         for i = 2, n do
-            if collects[i] == nil then return end
-         end
+
+      setmetatable(it, Iter)
+      return it
+    end
+
+    local t = {}
+
+    -- Check if source table can be treated like a list (indices are consecutive integers
+    -- starting from 1)
+    local count = 0
+    for _ in pairs(src) do
+      count = count + 1
+      local v = src[count]
+      if v == nil then
+        return Iter.new(pairs(src))
       end
-      return unpack(collects, 1, n)
-   end
-   return zip_collect(self, state, c, self[c]())
-end
+      t[count] = v
+    end
+    return ListIter.new(t)
+  end
 
-local function zip_next(self, state)
-   self.collects.n = 0
-   return zip_collect(self, state, 1, self[1]())
-end
+  if type(src) == 'function' then
+    local s, var = ...
 
-local function zip(...)
-   return collectiters(new_stateful(zip_reset, zip_next), ...)
-end
-
-local function chain_reset(self, other)
-   Iter.reset(self, other)
-   self.idx = other and other.idx or 1
-end
-
-local function chain_collect(self, key, ...)
-   if key ~= nil then return key, ... end
-   local idx = self.idx + 1
-   local base = self[idx]
-   if not base then return end
-   self.idx = idx
-   return chain_collect(self, base())
-end
-
-local function chain_next(self)
-   local base = self[self.idx]
-   if not base then return end
-   return chain_collect(self, base())
-end
-
-local function chain(...)
-   return collectiters(new_stateful(chain_reset, chain_next), ...)
-end
-
-local function cycle_collect(self, retry, key, ...)
-   if key ~= nil then return key, ... end
-   if retry then
-      self[1]:rewind()
-      return cycle_collect(self, false, self[1]())
-   end
-end
-
-local function cycle_next(self)
-   return cycle_collect(self, true, self[1]())
-end
-
-local function cycle(base)
-   local self = new_stateful(Iter.reset, cycle_next)
-   self[1] = base
-   return self
-end
-
-function Iter:prefix(...)
-   local super = zip(...)
-   super.notskip = true
-   super[#super+1] = self:clone()
-   return super
-end
-
-exportn(interleave, "interleave")
-exportn(zip,        "zip", "zipany", "zipAny", "zip_any")
-exportn(chain,      "chain")
-export0(cycle,      "cycle")
-
-exportn(function(...)
-   local self = interleave(...)
-   self.notskip = true
-   return self
-end, "skipinterleave", "skip_interleave", "skipInterleave")
-exportn(function(...)
-   local self = zip(...)
-   self.notskip = true
-   return self
-end, "zipall", "zipAll", "zip_all")
-
-
--- filtering
-
-local function filter_collect(self, state, key, ...)
-   if key == nil then return end
-   if state(key, ...) then return key, ...  end
-   return filter_collect(self, state, self[1]())
-end
-
-local function filter_next(self, state)
-   return filter_collect(self, state, self[1]())
-end
-
-local function filter(func, base)
-   assert(func, "function expected")
-   local self = new_stateful(Iter.reset, filter_next, func)
-   self[1] = base
-   return self
-end
-
-local function filterout(func, base)
-   assert(func, "function expected")
-   return filter(function(...) return not func(...) end, base)
-end
-
-export1(filter,    "filter", "removeifnot", "remove_if_not", "removeIfNot")
-export1(filterout, "filterout", "filter_out", "filterOut",
-                   "removeif", "remove_if", "removeIf")
-
-export1(function(func, base)
-   return filter(func, base), filterout(func, base)
-end, "partition")
-export1(function(patt, base)
-   return filter(function(v) return v:match(patt) end, base)
-end, "grep")
-
-
--- reducing
-
-local function each_collect(func, key, ...)
-   if key ~= nil then func(key, ...); return true end
-end
-
-local function each(func, base)
-   while each_collect(func, base()) do end
-end
-
-local function foldl_collect(func, init, key, ...)
-   if key == nil then return nil, init end
-   return key, func(init, key, ...)
-end
-
-local function foldl(func, init, base)
-   assert(func, "function expected")
-   if init == nil then
-      local key = base()
-      if key == nil then return init end
-      init = key
-   end
-   local key
-   while true do
-      key, init = foldl_collect(func, init, base())
-      if key == nil then return init end
-   end
-end
-
-local function index_collect(func, base, i, key, ...)
-   if key == nil then return end
-   if func(key, ...) then return i + 1, key, ...  end
-   return index_collect(func, base, i + 1, base())
-end
-
-local function index(func, base)
-   return index_collect(func or id, base, 0, base())
-end
-
-local function tcollect_collect(t, key, ...)
-   if key == nil then return end
-   local cn = select('#', ...)
-   t[#t+1] = key
-   for i = 1, cn do t[#t+1] = select(i, ...) end
-   return true
-end
-
-local function tcollect(t, base)
-   t = t or {}
-   while tcollect_collect(t, base()) do end
-   return t
-end
-
-local function concat(delim, base)
-   local t, n = {}, 0
-   for v in base do n = n + 1; t[n] = v end
-   return tabcat(t, delim, 1, n)
-end
-
-local function count(base)
-   local n = 0
-   while base() do n = n + 1 end
-   return n
-end
-
-local function isempty(base)
-   return base() == nil
-end
-
-local function predicate_collect(func, key, ...)
-   if key == nil then return end
-   return func(key, ...), key
-end
-
-local function any(func, base)
-   func = func or id
-   while true do
-      local r, key = predicate_collect(func, base())
-      if key == nil then return false end
-      if r          then return true end
-   end
-end
-
-local function all(func, base)
-   func = func or id
-   while true do
-      local r, key = predicate_collect(func, base())
-      if key == nil then return true end
-      if not r      then return false end
-   end
-end
-
-export1(each,     "each", "foreach", "for_each", "forEach")
-export2(foldl,    "reduce", "foldl")
-export1(index,    "index", "find", "indexof", "indexOf", "index_of")
-export1(tcollect, "collect")
-export1(concat,   "concat")
-export0(count,    "count", "length")
-export0(isempty,  "isempty", "is_empty", "isEmpty")
-export1(all,      "all", "every")
-export1(any,      "any", "some")
-
-
--- operators
-
-local Selector = {} do
-Selector.__name  = "selector"
-
-local rawget, rawset = rawget, rawset
-local make_selector = function(t) return setmetatable(t, Selector) end
-
-local function gen(v, root)
-   if getmetatable(v) == Selector then return v.gen(root) end
-   local t = type(v)
-   if t == "nil" or t == "boolean" or t == "number" then
-      return tostring(v)
-   elseif t == "string" then
-      return format('%q', v)
-   end
-   local n = root.n + 1
-   root.n = n
-   rawset(root, n, v)
-   return "_["..n.."]"
-end
-
-local function unary(op, a)
-   return make_selector {
-      gen = function(root) return "("..op..gen(a, root)..")" end }
-end
-
-local function binary(op, a, b)
-   return make_selector {
-      gen = function(root)
-         return "("..gen(a, root)..op..gen(b, root)..")" end }
-end
-
-function Selector.__newindex()   error("attempt to change a selector") end
-function Selector.__add(a, b)    return binary('+',  a, b) end
-function Selector.__band(a, b)   return binary('&',  a, b) end
-function Selector.__bnot(a)      return unary ('~',  a   ) end
-function Selector.__bnot(a)      return binary('~',  a, a) end
-function Selector.__bor(a, b)    return binary('|',  a, b) end
-function Selector.__bxor(a, b)   return binary('~',  a, b) end
-function Selector.__concat(a, b) return binary('..', a, b) end
-function Selector.__div(a, b)    return binary('/',  a, b) end
-function Selector.__idiv(a, b)   return binary('//', a, b) end
-function Selector.__len(a)       return unary ('#',  a   ) end
-function Selector.__mod(a, b)    return binary('%',  a, b) end
-function Selector.__mul(a, b)    return binary('*',  a, b) end
-function Selector.__pow(a, b)    return binary('^',  a, b) end
-function Selector.__shl(a, b)    return binary('<<', a, b) end
-function Selector.__shr(a, b)    return binary('>>', a, b) end
-function Selector.__sub(a, b)    return binary('-',  a, b) end
-function Selector.__unm(a)       return unary ('-',  a   ) end
-
-function Selector.__index(a, b)
-   return make_selector {
-      gen = function(root)
-         return format("(%s[%s])", gen(a, root), gen(b, root))
+    --- Use a closure to handle var args returned from iterator
+    local function fn(...)
+      -- Per the Lua 5.1 reference manual, an iterator is complete when the first returned value is
+      -- nil (even if there are other, non-nil return values). See |for-in|.
+      if select(1, ...) ~= nil then
+        var = select(1, ...)
+        return ...
       end
-   }
+    end
+
+    ---@private
+    function it.next()
+      return fn(src(s, var))
+    end
+
+    setmetatable(it, Iter)
+  else
+    error('src must be a table or function')
+  end
+  return it
 end
 
-function Selector:__call(...)
-   local eval = rawget(self, "eval")
-   if not eval then
-      rawset(self, 'n',    0)
-      rawset(self, 'max',  0)
-      rawset(self, 'dots', false)
-      local expr = self.gen(self)
-      local code = "return function(_"
-      if self.max > 0 then code = code..", _"..range(self.max):concat ", _" end
-      if self.dots then code = code .. ", ..." end
-      code = code .. ") return "..expr.."; end"
-      eval = assert(load(code, expr))()
-      rawset(self, "eval", eval)
-   end
-   return eval(self, ...)
+--- Create a new ListIter
+---
+---@param t table List-like table. Caller guarantees that this table is a valid list.
+---@return Iter
+---@private
+function ListIter.new(t)
+  local it = {}
+  it._table = t
+  it._head = 1
+  it._tail = #t + 1
+  setmetatable(it, ListIter)
+  return it
 end
 
-local function call(...)
-   local args = pack(...)
-   return make_selector {
-      gen = function(root)
-         for i = 1, args.n do
-            args[i] = gen(args[i], root)
-         end
-         return args[1].."("..tabcat(args, ", ", 2, args.n)..")"
-      end
-   }
+--- Collect an iterator into a table.
+---
+--- This is a convenience function that performs:
+--- <pre>lua
+--- vim.iter(f):totable()
+--- </pre>
+---
+---@param f function Iterator function
+---@return table
+function M.totable(f, ...)
+  return Iter.new(f, ...):totable()
 end
 
-local selectors = {
-   call = call;
-   self = function(obj)
-      return setmetatable({}, {
-         __index = function(_, key)
-            return function(...) return call(obj[key], obj, ...) end
-         end;
-      })
-   end;
-   dots = make_selector {
-      eval = function(_, ...) return ... end;
-      gen = function(root)
-         root.dots = true
-         return "..."
-      end;
-   };
-
-   lt    = function(a, b) return binary("<",   a, b) end;
-   le    = function(a, b) return binary("<=",  a, b) end;
-   gt    = function(a, b) return binary(">",   a, b) end;
-   ge    = function(a, b) return binary(">=",  a, b) end;
-   eq    = function(a, b) return binary("==",  a, b) end;
-   ne    = function(a, b) return binary("~=",  a, b) end;
-   land  = function(a, b) return binary("and", a, b) end;
-   lnot  = function(a)    return unary ("not", a   ) end;
-   lor   = function(a, b) return binary("or",  a, b) end;
-   andor = function(a, b, c)
-      return make_selector {
-         gen = function(root)
-            return format("(%s and %s or %s)",
-                          gen(a, root), gen(b, root), gen(c, root))
-         end
-      }
-   end;
-}
-
-for i = 1, 9 do
-   local selector = make_selector {
-      eval = assert(load("return function(_, _"..range(i):concat ", _"..
-                         ") return _"..i.. " end", '_'..i))();
-      gen = function(root)
-         if root.max < i then root.max = i end
-         return '_'..i
-      end;
-   }
-   selectors[i] = selector
-   iter['_'..i] = selector
+--- Filter a table or iterator.
+---
+--- This is a convenience function that performs:
+--- <pre>lua
+--- vim.iter(src):filter(f):totable()
+--- </pre>
+---
+---@see |Iter:filter()|
+---
+---@param f function(...):bool Filter function. Accepts the current iterator or table values as
+---                            arguments and returns true if those values should be kept in the
+---                            final table
+---@param src table|function Table or iterator function to filter
+---@return table
+function M.filter(f, src, ...)
+  return Iter.new(src, ...):filter(f):totable()
 end
 
-iter._ = setmetatable(selectors, {
-   __newindex = Selector.__newindex;
-   __call = function(_, f)
-      if type(f) == "string" then
-         return assert(load("return function(_"..range(9):concat ", _"..
-                            ") return "..f.."; end", f))()
-      end
-      return function(...) return call(f, ...) end
-   end;
+--- Map and filter a table or iterator.
+---
+--- This is a convenience function that performs:
+--- <pre>lua
+--- vim.iter(src):map(f):totable()
+--- </pre>
+---
+---@see |Iter:map()|
+---
+---@param f function(...):?any Map function. Accepts the current iterator or table values as
+---                            arguments and returns one or more new values. Nil values are removed
+---                            from the final table.
+---@param src table|function Table or iterator function to filter
+---@return table
+function M.map(f, src, ...)
+  return Iter.new(src, ...):map(f):totable()
+end
+
+---@type IterMod
+return setmetatable(M, {
+  __call = function(_, ...)
+    return Iter.new(...)
+  end,
 })
-
-end
-
-local Operator = {
-   id = id,
-
-   -- Comparison operators
-   eq = function(a, b) return a == b end;
-   lt = function(a, b) return a <  b end;
-   le = function(a, b) return a <= b end;
-   ne = function(a, b) return a ~= b end;
-   gt = function(a, b) return a >  b end;
-   ge = function(a, b) return a >= b end;
-
-   -- Arithmetic operators
-   add = function(a, b) return a + b end;
-   sub = function(a, b) return a - b end;
-   mul = function(a, b) return a * b end;
-   div = function(a, b) return a / b end;
-   mod = function(a, b) return a % b end;
-   pow = function(a, b) return a ^ b end;
-   neg = function(a)    return   - a end;
-   unm = function(a)    return   - a end;
-
-   floordiv = function(a, b) return floor(a/b) end;
-   intdiv   = function(a, b)
-      local q = a / b
-      if a >= 0 then return floor(q) else return ceil(q) end
-   end;
-
-   -- String operators
-   cat    = function(a, b) return a .. b end;
-   concat = function(a, b) return a .. b end;
-   len    = function(a)    return    # a end;
-   length = function(a)    return    # a end;
-
-   -- Posfix operators
-   index = function(a, b)   return a[b]   end;
-   call  = function(a, ...) return a(...) end;
-
-   -- logic operators
-   landor = function(a, b, c) return a and b or c end;
-   land   = function(a, b)    return a and b      end;
-   lor    = function(a, b)    return a       or b end;
-   lnot   = function(a)       return   not a      end;
-
-   -- misc
-   newindex = function(a, b, c) a[b] = c end;
-}
-
---[[Lua 5.3 operators]] do
-   local loader = load [[
-      local Operator = ...
-      function Operator.idiv(a, b) return a // b end
-      function Operator.band(a, b) return a &  b end
-      function Operator.bor(a, b)  return a |  b end
-      function Operator.bxor(a, b) return a ~  b end
-      function Operator.bnot(a)    return   ~  a end
-      function Operator.shl(a, b)  return a << b end
-      function Operator.shr(a, b)  return a >> b end
-   ]]
-   if loader then loader(Operator) end
-end
-
-setmetatable(Operator, {
-   __call = function(self, op)
-      return iter._(assert(self[op], "no such operator"))
-   end
-})
-
-iter.op       = Operator
-iter.operator = Operator
-
-
--- export
-
-return setmetatable(iter, {
-   __call = function(self, t)
-      t = t or _G
-      for k, v in pairs(self) do
-         t[k] = v
-      end
-      return self
-   end
-})
-
--- cc: src='test.lua'
-
