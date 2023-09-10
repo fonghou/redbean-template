@@ -83,14 +83,14 @@ end
 local packedmt = {}
 
 local function unpack(t)
-  if type(t) == "table" and getmetatable(t) == packedmt then
-    return table.unpack(t, 1, t.n)
+  if type(t) == 'table' and getmetatable(t) == packedmt then
+    return _G.unpack(t, 1, t.n)
   end
   return t
 end
 
 local function pack(...)
-  local n = select("#", ...)
+  local n = select('#', ...)
   if n > 1 then
     return setmetatable({ n = n, ... }, packedmt)
   end
@@ -98,7 +98,7 @@ local function pack(...)
 end
 
 local function sanitize(t)
-  if type(t) == "table" and getmetatable(t) == packedmt then
+  if type(t) == 'table' and getmetatable(t) == packedmt then
     -- Remove length tag
     t.n = nil
   end
@@ -342,6 +342,11 @@ function ListIter.totable(self)
   -- for i = len + 1, table.maxn(self._table) do
   --   self._table[i] = nil
   -- end
+  for k, _ in pairs(self._table) do
+    if type(k) == "number" and k > len then
+      self._table[k] = nil
+    end
+  end
 
   self._head = 1
   self._tail = len + 1
@@ -441,7 +446,7 @@ end
 ---
 ---@return Iter
 function Iter.rev(self)
-  error("rev() requires a list-like table")
+  error('rev() requires a list-like table')
   return self
 end
 
@@ -471,7 +476,7 @@ end
 ---
 ---@return any
 function Iter.peek(self) -- luacheck: no unused args
-  error("peek() requires a list-like table")
+  error('peek() requires a list-like table')
 end
 
 ---@private
@@ -504,7 +509,7 @@ end
 ---
 ---@return any
 function Iter.find(self, f)
-  if type(f) ~= "function" then
+  if type(f) ~= 'function' then
     local val = f
     f = function(v)
       return v == val
@@ -550,12 +555,12 @@ end
 ---
 ---@return any
 function Iter.rfind(self, f) -- luacheck: no unused args
-  error("rfind() requires a list-like table")
+  error('rfind() requires a list-like table')
 end
 
 ---@private
 function ListIter.rfind(self, f) -- luacheck: no unused args
-  if type(f) ~= "function" then
+  if type(f) ~= 'function' then
     local val = f
     f = function(v)
       return v == val
@@ -588,7 +593,7 @@ end
 ---
 ---@return any
 function Iter.nextback(self) -- luacheck: no unused args
-  error("nextback() requires a list-like table")
+  error('nextback() requires a list-like table')
 end
 
 function ListIter.nextback(self)
@@ -616,7 +621,7 @@ end
 ---
 ---@return any
 function Iter.peekback(self) -- luacheck: no unused args
-  error("peekback() requires a list-like table")
+  error('peekback() requires a list-like table')
 end
 
 function ListIter.peekback(self)
@@ -672,7 +677,7 @@ end
 ---@param n number Number of values to skip.
 ---@return Iter
 function Iter.skipback(self, n) -- luacheck: no unused args
-  error("skipback() requires a list-like table")
+  error('skipback() requires a list-like table')
   return self
 end
 
@@ -744,7 +749,7 @@ end
 ---@param last number
 ---@return Iter
 function Iter.slice(self, first, last) -- luacheck: no unused args
-  error("slice() requires a list-like table")
+  error('slice() requires a list-like table')
   return self
 end
 
@@ -889,9 +894,9 @@ end
 ---@private
 function Iter.new(src, ...)
   local it = {}
-  if type(src) == "table" then
+  if type(src) == 'table' then
     local mt = getmetatable(src)
-    if mt and type(mt.__call) == "function" then
+    if mt and type(mt.__call) == 'function' then
       ---@private
       function it.next()
         return src()
@@ -917,7 +922,7 @@ function Iter.new(src, ...)
     return ListIter.new(t)
   end
 
-  if type(src) == "function" then
+  if type(src) == 'function' then
     local s, var = ...
 
     --- Use a closure to handle var args returned from iterator
@@ -937,7 +942,7 @@ function Iter.new(src, ...)
 
     setmetatable(it, Iter)
   else
-    error("src must be a table or function")
+    error('src must be a table or function')
   end
   return it
 end

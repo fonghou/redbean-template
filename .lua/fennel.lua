@@ -382,8 +382,8 @@ package.preload["fennel.repl"] = package.preload["fennel.repl"] or function(...)
     for _, path in ipairs(apropos(pattern)) do
       local tgt = apropos_follow_path(path)
       if (("function" == type(tgt)) and (compiler.metadata):get(tgt, "fnl/docstring")) then
-        on_values(specials.doc(tgt, path))
-        on_values()
+        on_values({specials.doc(tgt, path)})
+        on_values({})
       end
     end
     return nil
