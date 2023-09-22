@@ -1354,7 +1354,6 @@ package.preload["fennel.specials"] = package.preload["fennel.specials"] or funct
   SPECIALS.each = function(ast, scope, parent)
     compiler.assert((3 <= #ast), "expected body expression", ast[1])
     compiler.assert(utils["table?"](ast[2]), "expected binding table", ast)
-    compiler.assert((2 <= #ast[2]), "expected binding and iterator", ast)
     local binding = setmetatable(utils.copy(ast[2]), getmetatable(ast[2]))
     local until_condition = remove_until_condition(binding)
     local iter = table.remove(binding, #binding)
@@ -1375,6 +1374,7 @@ package.preload["fennel.specials"] = package.preload["fennel.specials"] or funct
     local vals = compiler.compile1(iter, scope, parent)
     local val_names = utils.map(vals, tostring)
     local chunk = {}
+    compiler.assert(bind_vars[1], "expected binding and iterator", ast)
     compiler.emit(parent, ("for %s in %s do"):format(table.concat(bind_vars, ", "), table.concat(val_names, ", ")), ast)
     for raw, args in utils.stablepairs(destructures) do
       compiler.destructure(args, raw, ast, sub_scope, chunk, {declaration = true, nomulti = true, symtype = "each"})

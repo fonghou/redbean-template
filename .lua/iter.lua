@@ -15,44 +15,45 @@
 --- (for function iterators, this means that the first value returned by the function is nil).
 ---
 --- Examples:
---- <pre>lua
----   local it = vim.iter({ 1, 2, 3, 4, 5 })
----   it:map(function(v)
----     return v * 3
----   end)
----   it:rev()
----   it:skip(2)
----   it:totable()
----   -- { 9, 6, 3 }
 ---
----   -- ipairs() is a function iterator which returns both the index (i) and the value (v)
----   vim.iter(ipairs({ 1, 2, 3, 4, 5 })):map(function(i, v)
----     if i > 2 then return v end
----   end):totable()
----   -- { 3, 4, 5 }
+--- ```lua
+--- local it = vim.iter({ 1, 2, 3, 4, 5 })
+--- it:map(function(v)
+---   return v * 3
+--- end)
+--- it:rev()
+--- it:skip(2)
+--- it:totable()
+--- -- { 9, 6, 3 }
 ---
----   local it = vim.iter(vim.gsplit('1,2,3,4,5', ','))
----   it:map(function(s) return tonumber(s) end)
----   for i, d in it:enumerate() do
----     print(string.format("Column %d is %d", i, d))
----   end
----   -- Column 1 is 1
----   -- Column 2 is 2
----   -- Column 3 is 3
----   -- Column 4 is 4
----   -- Column 5 is 5
+--- -- ipairs() is a function iterator which returns both the index (i) and the value (v)
+--- vim.iter(ipairs({ 1, 2, 3, 4, 5 })):map(function(i, v)
+---   if i > 2 then return v end
+--- end):totable()
+--- -- { 3, 4, 5 }
 ---
----   vim.iter({ a = 1, b = 2, c = 3, z = 26 }):any(function(k, v)
----     return k == 'z'
----   end)
----   -- true
+--- local it = vim.iter(vim.gsplit('1,2,3,4,5', ','))
+--- it:map(function(s) return tonumber(s) end)
+--- for i, d in it:enumerate() do
+---   print(string.format("Column %d is %d", i, d))
+--- end
+--- -- Column 1 is 1
+--- -- Column 2 is 2
+--- -- Column 3 is 3
+--- -- Column 4 is 4
+--- -- Column 5 is 5
 ---
----   local rb = vim.ringbuf(3)
----   rb:push("a")
----   rb:push("b")
----   vim.iter(rb):totable()
----   -- { "a", "b" }
---- </pre>
+--- vim.iter({ a = 1, b = 2, c = 3, z = 26 }):any(function(k, v)
+---   return k == 'z'
+--- end)
+--- -- true
+---
+--- local rb = vim.ringbuf(3)
+--- rb:push("a")
+--- rb:push("b")
+--- vim.iter(rb):totable()
+--- -- { "a", "b" }
+--- ```
 ---
 --- In addition to the |vim.iter()| function, the |vim.iter| module provides
 --- convenience functions like |vim.iter.filter()| and |vim.iter.totable()|.
@@ -140,9 +141,10 @@ end
 --- Add a filter step to the iterator pipeline.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 --- local bufs = vim.iter(vim.api.nvim_list_bufs()):filter(vim.api.nvim_buf_is_loaded)
---- </pre>
+--- ```
 ---
 ---@param f function(...):bool Takes all values returned from the previous stage
 ---                            in the pipeline and returns false or nil if the
@@ -176,7 +178,8 @@ end
 --- If the map function returns nil, the value is filtered from the iterator.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 --- local it = vim.iter({ 1, 2, 3, 4 }):map(function(v)
 ---   if v % 2 == 0 then
 ---     return v * 3
@@ -184,7 +187,7 @@ end
 --- end)
 --- it:totable()
 --- -- { 6, 12 }
---- </pre>
+--- ```
 ---
 ---@param f function(...):any Mapping function. Takes all values returned from
 ---                           the previous stage in the pipeline as arguments
@@ -288,7 +291,8 @@ end
 --- pipeline, each value will be included in a table.
 ---
 --- Examples:
---- <pre>lua
+---
+--- ```lua
 --- vim.iter(string.gmatch('100 20 50', '%d+')):map(tonumber):totable()
 --- -- { 100, 20, 50 }
 ---
@@ -297,7 +301,7 @@ end
 ---
 --- vim.iter({ a = 1, b = 2, c = 3 }):filter(function(k, v) return v % 2 ~= 0 end):totable()
 --- -- { { 'a', 1 }, { 'c', 3 } }
---- </pre>
+--- ```
 ---
 --- The generated table is a list-like table with consecutive, numeric indices.
 --- To create a map-like table with arbitrary keys, use |Iter:fold()|.
@@ -357,7 +361,8 @@ end
 --- Fold ("reduce") an iterator or table into a single value.
 ---
 --- Examples:
---- <pre>lua
+---
+--- ```lua
 --- -- Create a new table with only even values
 --- local t = { a = 1, b = 2, c = 3, d = 4 }
 --- local it = vim.iter(t)
@@ -367,7 +372,7 @@ end
 ---   return t
 --- end)
 --- -- { b = 2, d = 4 }
---- </pre>
+--- ```
 ---
 ---@generic A
 ---
@@ -403,7 +408,8 @@ end
 --- Return the next value from the iterator.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter(string.gmatch('1 2 3', '%d+')):map(tonumber)
 --- it:next()
@@ -413,7 +419,7 @@ end
 --- it:next()
 --- -- 3
 ---
---- </pre>
+--- ```
 ---
 ---@return any
 function Iter.next(self) -- luacheck: no unused args
@@ -436,13 +442,14 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 3, 6, 9, 12 }):rev()
 --- it:totable()
 --- -- { 12, 9, 6, 3 }
 ---
---- </pre>
+--- ```
 ---
 ---@return Iter
 function Iter.rev(self)
@@ -462,7 +469,8 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 3, 6, 9, 12 })
 --- it:peek()
@@ -472,7 +480,7 @@ end
 --- it:next()
 --- -- 3
 ---
---- </pre>
+--- ```
 ---
 ---@return any
 function Iter.peek(self) -- luacheck: no unused args
@@ -491,7 +499,8 @@ end
 --- Advances the iterator. Returns nil and drains the iterator if no value is found.
 ---
 --- Examples:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 3, 6, 9, 12 })
 --- it:find(12)
@@ -505,7 +514,7 @@ end
 --- it:find(function(v) return v % 4 == 0 end)
 --- -- 12
 ---
---- </pre>
+--- ```
 ---
 ---@return any
 function Iter.find(self, f)
@@ -541,7 +550,8 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Examples:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 1, 2, 3, 2, 1 }):enumerate()
 --- it:rfind(1)
@@ -549,7 +559,7 @@ end
 --- it:rfind(1)
 --- -- 1	1
 ---
---- </pre>
+--- ```
 ---
 ---@see Iter.find
 ---
@@ -583,13 +593,14 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 --- local it = vim.iter({1, 2, 3, 4})
 --- it:nextback()
 --- -- 4
 --- it:nextback()
 --- -- 3
---- </pre>
+--- ```
 ---
 ---@return any
 function Iter.nextback(self) -- luacheck: no unused args
@@ -609,7 +620,8 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 --- local it = vim.iter({1, 2, 3, 4})
 --- it:peekback()
 --- -- 4
@@ -617,7 +629,7 @@ end
 --- -- 4
 --- it:nextback()
 --- -- 4
---- </pre>
+--- ```
 ---
 ---@return any
 function Iter.peekback(self) -- luacheck: no unused args
@@ -634,13 +646,14 @@ end
 --- Skip values in the iterator.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 3, 6, 9, 12 }):skip(2)
 --- it:next()
 --- -- 9
 ---
---- </pre>
+--- ```
 ---
 ---@param n number Number of values to skip.
 ---@return Iter
@@ -666,13 +679,14 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 --- local it = vim.iter({ 1, 2, 3, 4, 5 }):skipback(2)
 --- it:next()
 --- -- 1
 --- it:nextback()
 --- -- 3
---- </pre>
+--- ```
 ---
 ---@param n number Number of values to skip.
 ---@return Iter
@@ -696,7 +710,8 @@ end
 --- This function advances the iterator.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 3, 6, 9, 12 })
 --- it:nth(2)
@@ -704,7 +719,7 @@ end
 --- it:nth(2)
 --- -- 12
 ---
---- </pre>
+--- ```
 ---
 ---@param n number The index of the value to return.
 ---@return any
@@ -721,7 +736,8 @@ end
 --- Only supported for iterators on list-like tables.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter({ 3, 6, 9, 12 })
 --- it:nthback(2)
@@ -729,7 +745,7 @@ end
 --- it:nthback(2)
 --- -- 3
 ---
---- </pre>
+--- ```
 ---
 ---@param n number The index of the value to return.
 ---@return any
@@ -810,7 +826,8 @@ end
 --- Drains the iterator.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter(vim.gsplit('abcdefg', ''))
 --- it:last()
@@ -820,7 +837,7 @@ end
 --- it:last()
 --- -- 15
 ---
---- </pre>
+--- ```
 ---
 ---@return any
 function Iter.last(self)
@@ -844,19 +861,22 @@ end
 --- Add an iterator stage that returns the current iterator count as well as the iterator value.
 ---
 --- For list tables, prefer
---- <pre>lua
+---
+--- ```lua
 --- vim.iter(ipairs(t))
---- </pre>
+--- ```
 ---
 --- over
---- <pre>lua
+---
+--- ```lua
 --- vim.iter(t):enumerate()
---- </pre>
+--- ```
 ---
 --- as the former is faster.
 ---
 --- Example:
---- <pre>lua
+---
+--- ```lua
 ---
 --- local it = vim.iter(vim.gsplit('abc', '')):enumerate()
 --- it:next()
@@ -866,7 +886,7 @@ end
 --- it:next()
 --- -- 3	'c'
 ---
---- </pre>
+--- ```
 ---
 ---@return Iter
 function Iter.enumerate(self)
@@ -964,9 +984,10 @@ end
 --- Collect an iterator into a table.
 ---
 --- This is a convenience function that performs:
---- <pre>lua
+---
+--- ```lua
 --- vim.iter(f):totable()
---- </pre>
+--- ```
 ---
 ---@param f function Iterator function
 ---@return table
@@ -977,9 +998,10 @@ end
 --- Filter a table or iterator.
 ---
 --- This is a convenience function that performs:
---- <pre>lua
+---
+--- ```lua
 --- vim.iter(src):filter(f):totable()
---- </pre>
+--- ```
 ---
 ---@see |Iter:filter()|
 ---
@@ -995,9 +1017,10 @@ end
 --- Map and filter a table or iterator.
 ---
 --- This is a convenience function that performs:
---- <pre>lua
+---
+--- ```lua
 --- vim.iter(src):map(f):totable()
---- </pre>
+--- ```
 ---
 ---@see |Iter:map()|
 ---
