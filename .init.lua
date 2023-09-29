@@ -57,32 +57,4 @@ function Dofile(fname)
   end
 end
 
--- SQLite3 db
-local sqlite3 = require "lsqlite3"
-
-function ConnectDb()
-  if not Db then
-    Db = sqlite3.open("db/sqlite3")
-    Db:busy_timeout(1000)
-    Db:exec "PRAGMA journal_mode=WAL"
-    Db:exec "PRAGMA synchronous=NORMAL"
-  end
-  return Db
-end
-
--- fullmoon routes
-local fm = require "fullmoon"
-
-require "routes"
-require "views"
-
-fm.setRoute("/*.lua", function(req)
-  Dofile(req.params.splat)
-  return true
-end)
-
-fm.setRoute("/*catchall", fm.servePath)
-
-fm.setTemplate({ "/tmpl/", html = "fmt" })
-
-fm.run()
+require "start"
