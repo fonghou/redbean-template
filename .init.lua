@@ -1,7 +1,7 @@
 require("batteries")()
 
 -- setup debugger
-DEBUG = true
+DEBUG = false
 if os.getenv("DEBUG") then
   DEBUG = true
 end
