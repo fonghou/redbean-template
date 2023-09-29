@@ -1,16 +1,14 @@
-local html = Write
-
-html [[
+Write [[
   <!doctype html>
-  <html lang='en-us'>
+  <html lang="en-us">
   <head>
-    <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <script src='https://unpkg.com/htmx.org@1.9.3'></script>
-    <script src='https://unpkg.com/hyperscript.org@0.9.9'></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
   </head>
-  <body>
+  <body hx-boost="true">
 ]]
 
-Dofile "todo"
+Dofile "htmx"
 
-html "</body></html>"
+Write "</body></html>"

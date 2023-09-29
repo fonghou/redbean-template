@@ -1,3 +1,21 @@
+require("batteries")()
+
+-- setup debugger
+DEBUG = true
+if os.getenv("DEBUG") then
+  DEBUG = true
+end
+
+if DEBUG then
+  pcall(require, "readline")
+  local dbg = require "debugger"
+  _G.dbg = dbg
+  _G.error = dbg.error
+  _G.assert = dbg.assert
+else
+  _G.dbg = function() end
+end
+
 -- setup fennel
 local fennel = require "fennel"
 local path = require "path"
@@ -10,9 +28,10 @@ local make_searcher = function(env)
     else
       mod_path = "/zip/.lua/" .. mod_path
     end
-    return function(...)
-      return fennel.dofile(mod_path, { env = env, correlate = true }, ...)
-    end, mod_path
+    local loader = function(...)
+      return fennel.dofile(mod_path, { env = env, correlate = true, assertAsRepl = DEBUG }, ...)
+    end
+    return loader, mod_path
   end
 end
 
@@ -24,7 +43,7 @@ function Dofile(fname)
   local file = fname .. ".fnl"
   if path.exists(file) then
     Log(kLogVerbose, string.format("dofile('%s')", file))
-    return fennel.dofile(file)
+    return fennel.dofile(file, { env = _G, correlate = true, assertAsRepl = DEBUG })
   end
   file = fname .. ".lua"
   if path.exists(file) then
@@ -36,16 +55,6 @@ function Dofile(fname)
     Log(kLogVerbose, string.format("dofile('%s')", file))
     return dofile(file)
   end
-end
-
--- setup debugger
-if os.getenv("DEBUG") then
-  local dbg = require "debugger"
-  _G.dbg = dbg
-  _G.error = dbg.error
-  _G.assert = dbg.assert
-else
-  _G.dbg = function() end
 end
 
 -- SQLite3 db
