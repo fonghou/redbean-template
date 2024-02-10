@@ -35,4 +35,3 @@ deps:
 	curl https://raw.githubusercontent.com/neovim/neovim/master/runtime/lua/vim/iter.lua >.lua/iter.lua
 	curl https://raw.githubusercontent.com/andreyorst/itable/main/src/itable.fnl >.lua/itable.fnl
 	cp ~/github/fennel/fennel.lua .lua/
-	sudo sh -c "echo ':APE:M::MZqFpD::/usr/bin/ape:' >/proc/sys/fs/binfmt_misc/register"
