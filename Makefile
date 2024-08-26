@@ -1,8 +1,8 @@
-SERVER = server.com
+SERVER = server.exe
 LUASRC = $(shell fd -e lua -e fnl -E '*macro*.fnl' | sed 's/.fnl$$/.lua/')
 
-${SERVER}: redbean.com ${LUASRC}
-	cp redbean.com ${SERVER} && zip -r ${SERVER} .args .init.lua .lua tmpl/ ${LUASRC}
+${SERVER}: redbean ${LUASRC}
+	cp redbean ${SERVER} && zip -r ${SERVER} .args .init.lua .lua tmpl/ ${LUASRC}
 
 %.lua: %.fnl
 	fennel -c $< >$@

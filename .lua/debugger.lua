@@ -1,28 +1,5 @@
---[[
-	Copyright (c) 2023 Scott Lembcke and Howling Moon Software
-	
-	Permission is hereby granted, free of charge, to any person obtaining a copy
-	of this software and associated documentation files (the "Software"), to deal
-	in the Software without restriction, including without limitation the rights
-	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-	copies of the Software, and to permit persons to whom the Software is
-	furnished to do so, subject to the following conditions:
-	
-	The above copyright notice and this permission notice shall be included in
-	all copies or substantial portions of the Software.
-	
-	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-	SOFTWARE.
-	
-	TODO:
-	* Print short function arguments as part of stack location.
-	* Properly handle being reentrant due to coroutines.
-]]
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2024 Scott Lembcke and Howling Moon Software
 
 local dbg
 
@@ -362,6 +339,17 @@ local function cmd_up()
 	return false
 end
 
+local function cmd_inspect(offset)
+	offset = stack_top + tonumber(offset)
+	local info = debug.getinfo(offset + CMD_STACK_LEVEL)
+	if info then
+		stack_inspect_offset = offset
+		dbg.writeln("Inspecting frame: "..format_stack_frame_info(info))
+	else
+		dbg.writeln(COLOR_RED.."ERROR: "..COLOR_BLUE.."Invalid stack frame index."..COLOR_RESET)
+	end
+end
+
 local function cmd_where(context_lines)
 	local info = debug.getinfo(stack_inspect_offset + CMD_STACK_LEVEL)
 	return (info and where(info, tonumber(context_lines) or 5))
@@ -411,6 +399,7 @@ local function cmd_help()
 		..COLOR_BLUE.."  f"..COLOR_YELLOW.."(inish)"..GREEN_CARET.."step forward until exiting the current function\n"
 		..COLOR_BLUE.."  u"..COLOR_YELLOW.."(p)"..GREEN_CARET.."move up the stack by one frame\n"
 		..COLOR_BLUE.."  d"..COLOR_YELLOW.."(own)"..GREEN_CARET.."move down the stack by one frame\n"
+		..COLOR_BLUE.."  i"..COLOR_YELLOW.."(nspect) "..COLOR_BLUE.."[index]"..GREEN_CARET.."move to a specific stack frame\n"
 		..COLOR_BLUE.."  w"..COLOR_YELLOW.."(here) "..COLOR_BLUE.."[line count]"..GREEN_CARET.."print source code around the current line\n"
 		..COLOR_BLUE.."  e"..COLOR_YELLOW.."(val) "..COLOR_BLUE.."[statement]"..GREEN_CARET.."execute the statement\n"
 		..COLOR_BLUE.."  p"..COLOR_YELLOW.."(rint) "..COLOR_BLUE.."[expression]"..GREEN_CARET.."execute the expression and print the result\n"
@@ -433,6 +422,7 @@ local commands = {
 	["^e%s+(.*)$"] = cmd_eval,
 	["^u$"] = cmd_up,
 	["^d$"] = cmd_down,
+	["i%s*(%d+)"] = cmd_inspect,
 	["^w%s*(%d*)$"] = cmd_where,
 	["^t$"] = cmd_trace,
 	["^l$"] = cmd_locals,
@@ -535,8 +525,9 @@ end
 
 -- Works like assert(), but invokes the debugger on a failure.
 function dbg.assert(condition, message)
+	message = message or "assertion failed!"
 	if not condition then
-		dbg_writeln(COLOR_RED.."ERROR:"..COLOR_RESET..message)
+		dbg_writeln(COLOR_RED.."ERROR: "..COLOR_RESET..message)
 		dbg(false, 1, "dbg.assert()")
 	end
 	
@@ -643,7 +634,7 @@ if stdin_isatty and not os.getenv("DBG_NOREADLINE") then
 	
 	-- Conditionally enable LuaJIT readline support.
 	pcall(function()
-		if dbg.read == nil and ffi then
+		if dbg.read == dbg_read and ffi then
 			local readline = ffi.load("readline")
 			dbg.read = function(prompt)
 				local cstr = readline.readline(prompt)

@@ -3,7 +3,7 @@
 -- Copyright 2021-23 Paul Kulchenko
 --
 
-local NAME, VERSION = "fullmoon", "0.381"
+local NAME, VERSION = "fullmoon", "0.384"
 
 --[[-- support functions --]]--
 
@@ -778,7 +778,9 @@ local function makeStorage(dbname, sqlsetup, opts)
       if not stmt then return nil, "can't prepare: "..self.db:errmsg() end
       -- if the last statement is incomplete
       if not stmt:isopen() then break end
-      if stmt:bind_values(...) > 0 then
+      -- if the first parameter is a table, then use it to bind parameters by name
+      local tbl = select(1, ...)
+      if (type(tbl) == "table" and stmt:bind_names(tbl) or stmt:bind_values(...)) ~= sqlite3.OK then
         return nil, "can't bind values: "..self.db:errmsg()
       end
       for row in stmt:nrows() do
@@ -1315,7 +1317,7 @@ local function getSession()
     LogWarn("invalid session crypto hash: "..hash)
     return {}
   end
-  if DecodeBase64(sig) ~= GetCryptoHash(hash, msg, sopts.secret) then
+  if DecodeBase64(sig) ~= GetCryptoHash(hash, msg, sopts.secret or "") then
     LogWarn("invalid session signature: "..sig)
     return {}
   end
@@ -1468,7 +1470,7 @@ fm.test = {
   reqenv = reqenv, route2regex = route2regex, routes = routes,
   matchRoute = matchRoute, handleRequest = handleRequest, getRequest = getRequest,
   headerMap = headerMap, detectType = detectType, matchCondition = matchCondition,
-  setSession = setSession,
+  setSession = setSession, getSession = getSession
 }
 
 function fm.run(opts)
@@ -1536,8 +1538,8 @@ fm.setTemplate("fmt", {
           return writer(htm)
           ..(val ~= EOT -- this is not the suffix
             and (pref == "" -- this is a code fragment
-              and val:gsub("%-%-(.*)", decomment).." "
-              or ("Write(%s(tostring(%s or '')))")
+              and val:gsub("%-%-([^\r\n]*)", decomment).." "
+              or ("Write(%s(tostring(%s or (type(vars['if-nil']) == 'function' and vars['if-nil'](%s)) or '')))")
                 :format(pref == "&" and "escapeHtml" or "",
                         val:gsub("%-%-(.*)", decomment)))
             or "")
