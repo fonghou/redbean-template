@@ -6,10 +6,12 @@
 --- of each pipeline stage is input to the next stage. The first stage depends on the type passed to
 --- `vim.iter()`:
 ---
---- - List tables (arrays, |lua-list|) yield only the value of each element.
----   - Holes (nil values) are allowed.
+--- - Lists or arrays (|lua-list|) yield only the value of each element.
+---   - Holes (nil values) are allowed (but discarded).
+---   - Use pairs() to treat array/list tables as dicts (preserve holes and non-contiguous integer
+---     keys): `vim.iter(pairs(…))`.
 ---   - Use |Iter:enumerate()| to also pass the index to the next stage.
----   - Or initialize with ipairs(): `vim.iter(ipairs(…))`.
+---     - Or initialize with ipairs(): `vim.iter(ipairs(…))`.
 --- - Non-list tables (|lua-dict|) yield both the key and value of each element.
 --- - Function |iterator|s yield all values returned by the underlying function.
 --- - Tables with a |__call()| metamethod are treated as function iterators.
@@ -95,14 +97,14 @@ end
 local packedmt = {}
 
 local function unpack(t)
-  if type(t) == "table" and getmetatable(t) == packedmt then
+  if type(t) == 'table' and getmetatable(t) == packedmt then
     return _G.unpack(t, 1, t.n)
   end
   return t
 end
 
 local function pack(...)
-  local n = select("#", ...)
+  local n = select('#', ...)
   if n > 1 then
     return setmetatable({ n = n, ... }, packedmt)
   end
@@ -110,7 +112,7 @@ local function pack(...)
 end
 
 local function sanitize(t)
-  if type(t) == "table" and getmetatable(t) == packedmt then
+  if type(t) == 'table' and getmetatable(t) == packedmt then
     -- Remove length tag and metatable
     t.n = nil
     setmetatable(t, nil)
@@ -126,9 +128,9 @@ end
 ---@param result table output table that contains flattened result
 ---@return table|nil flattened table if it can be flattened, otherwise nil
 local function flatten(t, max_depth, depth, result)
-  if depth < max_depth and type(t) == "table" then
+  if depth < max_depth and type(t) == 'table' then
     for k, v in pairs(t) do
-      if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
+      if type(k) ~= 'number' or k <= 0 or math.floor(k) ~= k then
         -- short-circuit: this is not a list like table
         return nil
       end
@@ -232,7 +234,7 @@ end
 ---@return Iter
 ---@diagnostic disable-next-line:unused-local
 function Iter:flatten(depth) -- luacheck: no unused args
-  error("flatten() requires an array-like table")
+  error('flatten() requires an array-like table')
 end
 
 ---@private
@@ -246,7 +248,7 @@ function ArrayIter:flatten(depth)
 
     -- exit early if we try to flatten a dict-like table
     if flattened == nil then
-      error("flatten() requires an array-like table")
+      error('flatten() requires an array-like table')
     end
 
     for _, v in pairs(flattened) do
@@ -276,7 +278,7 @@ end
 --- -- { 6, 12 }
 --- ```
 ---
----@param f fun(...):any Mapping function. Takes all values returned from
+---@param f fun(...):...:any Mapping function. Takes all values returned from
 ---                      the previous stage in the pipeline as arguments
 ---                      and returns one or more new values, which are used
 ---                      in the next pipeline stage. Nil return values
@@ -549,7 +551,7 @@ end
 ---
 ---@return Iter
 function Iter:rev()
-  error("rev() requires an array-like table")
+  error('rev() requires an array-like table')
 end
 
 ---@private
@@ -577,7 +579,7 @@ end
 ---
 ---@return any
 function Iter:peek()
-  error("peek() requires an array-like table")
+  error('peek() requires an array-like table')
 end
 
 ---@private
@@ -611,7 +613,7 @@ end
 ---@param f any
 ---@return any
 function Iter:find(f)
-  if type(f) ~= "function" then
+  if type(f) ~= 'function' then
     local val = f
     f = function(v)
       return v == val
@@ -658,12 +660,12 @@ end
 ---@return any
 ---@diagnostic disable-next-line: unused-local
 function Iter:rfind(f) -- luacheck: no unused args
-  error("rfind() requires an array-like table")
+  error('rfind() requires an array-like table')
 end
 
 ---@private
 function ArrayIter:rfind(f)
-  if type(f) ~= "function" then
+  if type(f) ~= 'function' then
     local val = f
     f = function(v)
       return v == val
@@ -731,7 +733,7 @@ end
 ---
 ---@return any
 function Iter:pop()
-  error("pop() requires an array-like table")
+  error('pop() requires an array-like table')
 end
 
 --- @nodoc
@@ -761,7 +763,7 @@ end
 ---
 ---@return any
 function Iter:rpeek()
-  error("rpeek() requires an array-like table")
+  error('rpeek() requires an array-like table')
 end
 
 ---@nodoc
@@ -819,7 +821,7 @@ end
 ---@return Iter
 ---@diagnostic disable-next-line: unused-local
 function Iter:rskip(n) -- luacheck: no unused args
-  error("rskip() requires an array-like table")
+  error('rskip() requires an array-like table')
 end
 
 ---@private
@@ -871,7 +873,7 @@ end
 ---@return Iter
 ---@diagnostic disable-next-line: unused-local
 function Iter:slice(first, last) -- luacheck: no unused args
-  error("slice() requires an array-like table")
+  error('slice() requires an array-like table')
 end
 
 ---@private
@@ -1017,9 +1019,9 @@ end
 ---@private
 function Iter.new(src, ...)
   local it = {}
-  if type(src) == "table" then
+  if type(src) == 'table' then
     local mt = getmetatable(src)
-    if mt and type(mt.__call) == "function" then
+    if mt and type(mt.__call) == 'function' then
       ---@private
       function it.next()
         return src()
@@ -1033,15 +1035,15 @@ function Iter.new(src, ...)
 
     -- O(n): scan the source table to decide if it is an array (only positive integer indices).
     for k, v in pairs(src) do
-      if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
+      if type(k) ~= 'number' or k <= 0 or math.floor(k) ~= k then
         return Iter.new(pairs(src))
       end
-      t[#t + 1] = v
+      t[#t + 1] = v -- Coerce to list-like table.
     end
     return ArrayIter.new(t)
   end
 
-  if type(src) == "function" then
+  if type(src) == 'function' then
     local s, var = ...
 
     --- Use a closure to handle var args returned from iterator
@@ -1061,7 +1063,7 @@ function Iter.new(src, ...)
 
     setmetatable(it, Iter)
   else
-    error("src must be a table or function")
+    error('src must be a table or function')
   end
   return it
 end
